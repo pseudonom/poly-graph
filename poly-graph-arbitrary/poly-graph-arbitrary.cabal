@@ -1,0 +1,40 @@
+name:                poly-graph-arbitrary
+version:             0.1.0.0
+synopsis:            Arbitrary instances of polymorphic directed graphs
+description:         Please see README.md
+homepage:            http://github.com/pseudonom/poly-graph#readme
+license:             MIT
+license-file:        LICENSE
+author:              Eric Easley
+maintainer:          eric101111@gmail.com
+copyright:           2016 Eric Easley
+category:            Testing
+build-type:          Simple
+-- extra-source-files:
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Data.Graph.Polymorphic.Arbitrary
+  build-depends:       base
+                     , poly-graph
+                     , QuickCheck
+                     , derive
+  default-language:    Haskell2010
+
+test-suite poly-graph-arbitrary-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , poly-graph
+                     , poly-graph-arbitrary
+                     , hspec
+                     , QuickCheck
+                     , derive
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/pseudonom/poly-graph
