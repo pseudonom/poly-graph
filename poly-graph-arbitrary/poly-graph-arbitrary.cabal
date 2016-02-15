@@ -19,7 +19,7 @@ library
   build-depends:       base >= 4.7 && < 5
                      , poly-graph
                      , QuickCheck
-                     , derive
+                     , tagged
   default-language:    Haskell2010
 
 test-suite poly-graph-arbitrary-test

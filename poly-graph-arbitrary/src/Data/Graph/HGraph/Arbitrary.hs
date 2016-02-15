@@ -1,43 +1,53 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+-- Pattern synonyms and exhuastivity checking don't work well together
+{-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Make @Arbitrary@ polymorphic graphs
 module Data.Graph.HGraph.Arbitrary where
 
-import Data.DeriveTH
-import Data.Typeable (Typeable)
-import GHC.Generics (Generic)
+import Data.Functor.Identity
+import Data.Proxy
+import Data.Tagged
 import Test.QuickCheck.Arbitrary
 
 import Data.Graph.HGraph
 
--- | Control linking behavior when linking is optional i.e. never link
-data Never a = Never deriving (Read, Show, Eq, Ord, Generic, Typeable, Functor)
-$(derive makeArbitrary ''Never)
--- | Control linking behavior when linking is optional i.e. always link
-data Always a = Always { unAlways :: a } deriving (Read, Show, Eq, Ord, Generic, Typeable, Functor)
-$(derive makeArbitrary ''Always)
+type Never = Proxy
+type Always = Identity
 
-$(derive makeArbitrary ''FromMany)
-$(derive makeArbitrary ''ToMany)
-$(derive makeArbitrary ''FromTo)
+pattern Always a = Identity a
+pattern Never = Proxy
 
-instance (a ~~> b) => Always a ~~> b where
-  Always a ~~> b = Always $ a ~~> b
-instance (a ~~> Maybe b) => a ~~> Never b where
-  a ~~> Never = a ~~> (Nothing :: Maybe b)
-instance (a ~~> Maybe b) => a ~~> Always b where
-  a ~~> Always b = a ~~> Just b
-instance {-# OVERLAPPING #-} (a ~~> Maybe b) => Always a ~~> Always b where
-  Always a ~~> Always b = Always $ a ~~> Just b
+instance (Arbitrary a) => Arbitrary (Always a) where
+  arbitrary = Always <$> arbitrary
+instance Arbitrary (Never a) where
+  arbitrary = pure Never
+instance (a `Link` b) => (Always a) `Link` b where
+  (Always a) `link` b = Always $ a `link` b
+instance (a `Link` (Maybe b)) => a `Link` (Never b) where
+  a `link` Never = a `link` (Nothing :: Maybe b)
+instance (a `Link` Maybe b) => a `Link` (Always b) where
+  a `link` (Always b) = a `link` Just b
+instance (a `Link` Maybe b) => (Always a) `Link` (Always b) where
+  a `link` (Always b) = a `link` Just b
+instance (a `Link` Maybe b) => (Always a) `Link` (Never b) where
+  (Always a) `link` Never = Always $ a `link` (Nothing :: Maybe b)
 
-instance (a ~~> b, Arbitrary a, Arbitrary b) => Arbitrary (a :~>: b) where
+instance Arbitrary (HGraph '[]) where
+  arbitrary = pure Nil
+instance
+  (Tagged '(i, is) a `LinkR` HGraph b, Arbitrary a, Arbitrary (HGraph b)) =>
+  Arbitrary (HGraph ('(a, i, is) ': b)) where
   arbitrary = (~>) <$> arbitrary <*> arbitrary

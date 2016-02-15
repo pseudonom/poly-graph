@@ -1,11 +1,17 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
 import Test.Hspec
 
+import Data.Tagged (Tagged(..))
+
 import Data.Graph.HGraph
-import Data.Graph.HGraph.Internal ((:~>:)(PointsTo))
+import Data.Graph.HGraph.Internal (HGraph(Cons))
 
 data Node
   = Node
@@ -35,6 +41,7 @@ data NodeC
   , cPointer2 :: Maybe IdB
   } deriving (Show, Eq)
 
+
 main :: IO ()
 main = hspec $
   describe "~>" $ do
@@ -47,34 +54,46 @@ main = hspec $
     it "works for a complicated mess" $
       inAndOut `shouldBe` inAndOut'
 
-instance Node ~~> Node where
-  (Node id1 _) ~~> (Node id2 _) = Node id1 (Just id2)
-instance NodeA ~~> NodeB where
-  (NodeA ida _) ~~> (NodeB idb _) = NodeA ida (Just idb)
-instance NodeB ~~> NodeC where
-  (NodeB idb _) ~~> (NodeC idc _ _) = NodeB idb (Just idc)
-instance NodeC ~~> NodeA where
-  (NodeC idc _ idb) ~~> (NodeA ida _) = NodeC idc (Just ida) idb
-instance NodeC ~~> NodeB where
-  (NodeC idc ida _) ~~> (NodeB idb _) = NodeC idc ida (Just idb)
+instance Node `Link` Node where
+  (Node id1 _) `link` (Node id2 _) = Node id1 (Just id2)
+instance NodeA `Link` NodeB where
+  (NodeA ida _) `link` (NodeB idb _) = NodeA ida (Just idb)
+instance NodeB `Link` NodeC where
+  (NodeB idb _) `link` (NodeC idc _ _) = NodeB idb (Just idc)
+instance NodeC `Link` NodeA where
+  (NodeC idc _ idb) `link` (NodeA ida _) = NodeC idc (Just ida) idb
+instance NodeC `Link` NodeB where
+  (NodeC idc ida _) `link` (NodeB idb _) = NodeC idc ida (Just idb)
 
 simpleChain ::
-  NodeA :~>:
-    NodeB :~>:
-      NodeC
+  Tree (
+    NodeA :<:
+      NodeB :<:
+        NodeC
+  )
 simpleChain =
   NodeA 1 (Just 6) ~>
     NodeB 2 Nothing ~>
-      NodeC 3 Nothing Nothing
+      NodeC 3 Nothing Nothing ~>
+        Nil
 
 simpleChain' ::
-  NodeA :~>:
-    NodeB :~>:
-      NodeC
+  HGraph
+  [ '(NodeA, 0, '[1])
+  , '(NodeB, 1, '[2])
+  , '(NodeC, 2, '[])
+  ]
 simpleChain' =
-  NodeA 1 (Just 2) `PointsTo`
-    NodeB 2 (Just 3) `PointsTo`
-      NodeC 3 Nothing Nothing
+  Tagged (NodeA 1 (Just 2)) `Cons`
+    Tagged (NodeB 2 (Just 3)) `Cons`
+      Tagged (NodeC 3 Nothing Nothing) `Cons`
+        Nil
+
+-- | Our "read-only" patterns work as expected
+deconstruct :: (NodeA, NodeB, NodeC)
+deconstruct =
+  case simpleChain of
+    a :<: b :<: c :<: Nil -> (a, b, c)
 
 -- | Graph looks like
 -- @
@@ -86,79 +105,68 @@ simpleChain' =
 -- |
 -- +----->B>----->C
 -- @
--- You could also omit the `ToMany` and just use `(,)`,
--- but `ToMany` makes things more explicit and,
--- I think, clarifies errors when writing these terms.
 fanOut ::
-  NodeC :~>:
-    ToMany
-    ( NodeA
-    , NodeB :~>:
-        NodeC
-    )
+  Tree (
+    NodeC :<:
+      ( NodeA
+      , NodeB :<: NodeC
+      )
+  )
 fanOut =
   NodeC 1 (Just 4) Nothing ~>
-    ToMany
-    ( NodeA 2 Nothing
-    , NodeB 3 Nothing ~>
-        NodeC 4 Nothing Nothing
-    )
+    NodeA 2 Nothing ~>
+    NodeB 3 Nothing ~>
+      NodeC 4 Nothing Nothing ~> Nil
 
 fanOut' ::
-  NodeC :~>:
-    ToMany
-    ( NodeA
-    , NodeB :~>:
-        NodeC
-    )
+  HGraph
+  [ '(NodeC, 0, '[100, 200])
+  , '(NodeA, 100, '[])
+  , '(NodeB, 200, '[201])
+  , '(NodeC, 201, '[])
+  ]
 fanOut' =
-  NodeC 1 (Just 2) (Just 3) `PointsTo`
-    ToMany
-    ( NodeA 2 Nothing
-    , NodeB 3 (Just 4) `PointsTo`
-        NodeC 4 Nothing Nothing
-    )
+  Tagged (NodeC 1 (Just 2) (Just 3)) `Cons`
+    Tagged (NodeA 2 Nothing) `Cons`
+    Tagged (NodeB 3 (Just 4)) `Cons`
+      Tagged (NodeC 4 Nothing Nothing) `Cons` Nil
 
--- | Graph looks like
--- @
---  C>-------+
---           |
---           V
---           B>------>C
---           ^
---           |
---  A>-------+
--- @
+-- -- | Graph looks like
+-- -- @
+-- --  C>-------+
+-- --           |
+-- --           V
+-- --           B>------>C
+-- --           ^
+-- --           |
+-- --  A>-------+
+-- -- @
 
 fanIn ::
-  FromMany
-  ( NodeC
-  , NodeA
-  ) :~>:
-    NodeB :~>:
-      NodeC
+  HGraph
+  [ '(NodeC, "firstC", '["b"])
+  , '(NodeA, "a", '["b"])
+  , '(NodeB, "b", '["secondC"])
+  , '(NodeC, "secondC", '[])
+  ]
 fanIn =
-  FromMany
-  ( NodeC 1 Nothing Nothing
-  , NodeA 2 (Just 1)
-  ) ~>
-    NodeB 3 (Just 7) ~>
-      NodeC 4 Nothing Nothing
+  NodeC 1 Nothing Nothing ~>
+  NodeA 2 (Just 1) ~>
+  NodeB 3 (Just 7) ~>
+  NodeC 4 Nothing Nothing ~> Nil
 
 fanIn' ::
-  FromMany
-  ( NodeC
-  , NodeA
-  ) :~>:
-    NodeB :~>:
-      NodeC
+  HGraph
+  [ '(NodeC, "firstC", '["b"])
+  , '(NodeA, "a", '["b"])
+  , '(NodeB, "b", '["secondC"])
+  , '(NodeC, "secondC", '[])
+  ]
 fanIn' =
-  FromMany
-  ( NodeC 1 Nothing (Just 3)
-  , NodeA 2 (Just 3)
-  ) `PointsTo`
-    NodeB 3 (Just 4) ~>
-      NodeC 4 Nothing Nothing
+  Tagged (NodeC 1 Nothing (Just 3)) `Cons`
+  Tagged (NodeA 2 (Just 3)) `Cons`
+  Tagged (NodeB 3 (Just 4)) `Cons`
+  Tagged (NodeC 4 Nothing Nothing) `Cons` Nil
 
 -- | Graph looks like
 -- @
@@ -175,55 +183,41 @@ fanIn' =
 --  +------->6
 -- @
 inAndOut ::
-  FromMany
-  ( Node
-  , Node :~>:
-      ToMany
-      ( FromTo
-        ( Node :~>: Node
-        , Node
-        )
-      , Node
-      )
-  ) :~>:
-    Node
+  HGraph
+  [ '(Node, 1, '[7])
+  , '(Node, 2, '[3, 5, 6])
+  , '(Node, 3, '[4])
+  , '(Node, 4, '[7])
+  , '(Node, 5, '[7])
+  , '(Node, 6, '[])
+  , '(Node, 7, '[])
+  ]
 inAndOut =
-  FromMany
-  ( Node 1 Nothing
-  , Node 2 Nothing ~>
-      ToMany
-      ( FromTo
-        ( Node 3 Nothing ~> Node 4 Nothing
-        , Node 5 Nothing
-        )
-      , Node 6 Nothing
-      )
-  ) ~>
-    Node 7 Nothing
+  Node 1 Nothing ~>
+  Node 2 Nothing ~>
+  Node 3 Nothing ~>
+  Node 4 Nothing ~>
+  Node 5 Nothing ~>
+  Node 6 Nothing ~>
+  Node 7 Nothing ~>
+  Nil
 
 inAndOut' ::
-  FromMany
-  ( Node
-  , Node :~>:
-      ToMany
-      ( FromTo
-        ( Node :~>: Node
-        , Node
-        )
-      , Node
-      )
-  ) :~>:
-    Node
+  HGraph
+  [ '(Node, 1, '[7])
+  , '(Node, 2, '[3, 5, 6])
+  , '(Node, 3, '[4])
+  , '(Node, 4, '[7])
+  , '(Node, 5, '[7])
+  , '(Node, 6, '[])
+  , '(Node, 7, '[])
+  ]
 inAndOut' =
-  FromMany
-  ( Node 1 (Just 7)
-  , Node 2 (Just 6) `PointsTo` -- If we had multiple pointers, Node 2 would point to 3, 5, 6.
-      ToMany                   -- Because I'm lazy, it just points to the final Node.
-      ( FromTo
-        ( Node 3 (Just 4) `PointsTo` Node 4 (Just 7)
-        , Node 5 (Just 7)
-        )
-      , Node 6 Nothing
-      )
-  ) `PointsTo`
-    Node 7 Nothing
+  Tagged (Node 1 (Just 7)) `Cons`
+  Tagged (Node 2 (Just 6)) `Cons`
+  Tagged (Node 3 (Just 4)) `Cons`
+  Tagged (Node 4 (Just 7)) `Cons`
+  Tagged (Node 5 (Just 7)) `Cons`
+  Tagged (Node 6 Nothing) `Cons`
+  Tagged (Node 7 Nothing) `Cons`
+  Nil
