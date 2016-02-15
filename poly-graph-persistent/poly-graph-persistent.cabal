@@ -1,6 +1,6 @@
-name:                poly-graph
+name:                poly-graph-persistent
 version:             0.1.0.0
-synopsis:            Polymorphic directed graphs
+synopsis:            Special support for using `poly-graph` with `persistent`
 description:         Please see README.md
 homepage:            http://github.com/pseudonom/poly-graph
 license:             MIT
@@ -8,17 +8,19 @@ license-file:        LICENSE
 author:              Eric Easley
 maintainer:          eric101111@gmail.com
 copyright:           2016 Eric Easley
-category:            Data Structures
+category:            Database
 build-type:          Simple
 -- extra-source-files:
 cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Data.Graph.HGraph
-                     , Data.Graph.HGraph.Internal
-                     , Data.Graph.Experiment
+  exposed-modules:     Data.Graph.HGraph.Persistent
   build-depends:       base >= 4.7 && < 5
+                     , poly-graph
+                     , transformers
+                     , persistent
+                     , poly-graph-arbitrary
   default-language:    Haskell2010
 
 test-suite poly-graph-test
@@ -27,7 +29,19 @@ test-suite poly-graph-test
   main-is:             Spec.hs
   build-depends:       base
                      , poly-graph
+                     , poly-graph-persistent
                      , hspec
+                     , persistent
+                     , persistent-template
+                     , transformers
+                     , monad-logger
+                     , resourcet
+                     , persistent-sqlite
+                     , fast-logger
+                     , derive
+                     , QuickCheck
+                     , text
+                     , lens
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 

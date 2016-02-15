@@ -7,6 +7,7 @@ resolver: lts-5.2
 packages:
 - 'poly-graph'
 - 'poly-graph-arbitrary'
+- 'poly-graph-persistent'
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps: []

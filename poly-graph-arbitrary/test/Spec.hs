@@ -4,11 +4,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 
-import Data.DeriveTH
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck.Arbitrary
-import Test.QuickCheck.Gen
+import Data.DeriveTH (derive, makeArbitrary)
+import Test.Hspec (hspec, describe, shouldBe)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck.Arbitrary (Arbitrary(..))
+import Test.QuickCheck.Gen (Gen, generate)
 
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Arbitrary

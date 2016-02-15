@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeOperators #-}
 
 -- | You should try to avoid using this module.
@@ -13,3 +14,5 @@ import Data.Typeable (Typeable)
 infixr 2 :~>:
 infixr 2 `PointsTo`
 data a :~>: b = a `PointsTo` b deriving (Read, Show, Eq, Ord, Generic, Typeable)
+
+type Lens s t a b = forall f. Functor f => (a -> f b) -> (s -> f t)

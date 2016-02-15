@@ -4,7 +4,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeOperators #-}
@@ -55,7 +54,12 @@ instance (a ~~> b, a ~~> c, a ~~> d) => a ~~> (b, c, d) where
   a ~~> (b, c, d) = a ~~> b ~~> c ~~> d
 instance (a ~~> b, a ~~> c, a ~~> d, a ~~> e) => a ~~> (b, c, d, e) where
   a ~~> (b, c, d, e) = a ~~> b ~~> c ~~> d ~~> e
-instance {-# OVERLAPPABLE #-} (a ~~> b, Functor f) => f a ~~> b where
+-- This instance ends up overlapping in annoying ways
+-- instance {-# OVERLAPPABLE #-} (a ~~> b, Functor f) => f a ~~> b where
+--   as ~~> b = (~~> b) <$> as
+instance (a ~~> b) => [a] ~~> b where
+  as ~~> b = (~~> b) <$> as
+instance (a ~~> b) => Maybe a ~~> b where
   as ~~> b = (~~> b) <$> as
 
 instance (a ~~> b) => a ~~> (b :~>: c) where
@@ -72,18 +76,26 @@ instance (a ~~> b) => a ~~> FromTo b where
 instance (a ~~> b) => FromTo a ~~> b where
   FromTo a ~~> b = FromTo $ a ~~> b
 
+-- This is pretty messy
+instance (FromTo a ~~> b) => ToMany (FromTo a) ~~> b where
+  (ToMany (FromTo a)) ~~> b = ToMany (FromTo a ~~> b)
 instance (FromTo a ~~> c) => ToMany ((FromTo a), b) ~~> c where
   (ToMany (FromTo a, b)) ~~> c = ToMany (FromTo a ~~> c, b)
-instance (FromTo b ~~> c) => ToMany (a, (FromTo b)) ~~> c where
-  (ToMany (a, FromTo b)) ~~> c = ToMany (a, FromTo b ~~> c)
+instance {-# OVERLAPPING #-} (a ~~> b) => a ~~> ToMany (FromTo b) where
+  a ~~> (ToMany (FromTo b)) = a ~~> b
+instance {-# OVERLAPPING #-} (a ~~> b, a ~~> c) => a ~~> ToMany ((FromTo b), c) where
+  a ~~> (ToMany (FromTo b, c)) = a ~~> b ~~> c
+instance {-# OVERLAPPING #-} (b ~~> c, a ~~> c, a ~~> b) => FromMany (a :~>: ToMany (FromTo b)) ~~> c where
+  FromMany (a `PointsTo` ToMany (FromTo b)) ~~> c = FromMany (a' `PointsTo` ToMany (FromTo b'))
+    where
+      b' = b ~~> c
+      a' = a ~~> c ~~> b'
 
 instance {-# OVERLAPPING #-} (a ~~> b) => FromMany a ~~> (b :~>: c) where
   FromMany a ~~> (b `PointsTo` _) = FromMany (a ~~> b)
 
 -- | For use with e.g. @Control.Lens@
 -- Don't abuse them by updating the pointer field
-type Lens s t a b = forall f. Functor f => (a -> f b) -> (s -> f t)
-
 parent :: Lens (a :~>: b) (c :~>: b) a c
 parent f (a `PointsTo` b) = (`PointsTo` b) <$> f a
 child :: Lens (a :~>: b) (a :~>: c) b c
