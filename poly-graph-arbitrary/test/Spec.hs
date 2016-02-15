@@ -10,8 +10,8 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 
-import Data.Graph.Polymorphic
-import Data.Graph.Polymorphic.Arbitrary
+import Data.Graph.HGraph
+import Data.Graph.HGraph.Arbitrary
 
 data Node
   = Node

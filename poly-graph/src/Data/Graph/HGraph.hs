@@ -10,15 +10,15 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Data.Graph.Polymorphic
+module Data.Graph.HGraph
   ( (:~>:)
-  , module Data.Graph.Polymorphic
+  , module Data.Graph.HGraph
   ) where
 
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
-import Data.Graph.Polymorphic.Internal
+import Data.Graph.HGraph.Internal
 
 -- | Smart constructor which ensures inhabitants of @:~>:@ are linked
 infixr 2 ~>

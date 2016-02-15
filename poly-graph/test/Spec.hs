@@ -5,8 +5,8 @@
 
 import Test.Hspec
 
-import Data.Graph.Polymorphic
-import Data.Graph.Polymorphic.Internal ((:~>:)(PointsTo))
+import Data.Graph.HGraph
+import Data.Graph.HGraph.Internal ((:~>:)(PointsTo))
 
 data Node
   = Node

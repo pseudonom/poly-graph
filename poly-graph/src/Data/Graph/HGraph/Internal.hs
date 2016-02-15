@@ -4,7 +4,7 @@
 -- | You should try to avoid using this module.
 -- It has the raw @PointsTo@ and consequently allows you to construct @:~>:@
 -- which aren't actually linked.
-module Data.Graph.Polymorphic.Internal where
+module Data.Graph.HGraph.Internal where
 
 import GHC.Generics (Generic)
 import Data.Typeable (Typeable)

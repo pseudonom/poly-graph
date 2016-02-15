@@ -10,14 +10,14 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Make @Arbitrary@ polymorphic graphs
-module Data.Graph.Polymorphic.Arbitrary where
+module Data.Graph.HGraph.Arbitrary where
 
 import Data.DeriveTH
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Test.QuickCheck.Arbitrary
 
-import Data.Graph.Polymorphic
+import Data.Graph.HGraph
 
 -- | Control linking behavior when linking is optional i.e. never link
 data Never a = Never deriving (Read, Show, Eq, Ord, Generic, Typeable, Functor)
