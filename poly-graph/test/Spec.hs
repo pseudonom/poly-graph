@@ -87,6 +87,9 @@ simpleChain' =
 -- |
 -- +----->B>----->C
 -- @
+-- You could also omit the `ToMany` and just use `(,)`,
+-- but `ToMany` makes things more explicit and,
+-- I think, clarifies errors when writing these terms.
 fanOut ::
   NodeC :~>:
     ToMany
