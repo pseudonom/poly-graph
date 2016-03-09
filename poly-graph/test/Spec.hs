@@ -89,12 +89,6 @@ simpleChain' =
       Tagged (NodeC 3 Nothing Nothing) `Cons`
         Nil
 
--- | Our "read-only" patterns work as expected
-deconstruct :: (NodeA, NodeB, NodeC)
-deconstruct =
-  case simpleChain of
-    a :<: b :<: c :<: Nil -> (a, b, c)
-
 -- | Graph looks like
 -- @
 -- +----->A
@@ -130,6 +124,12 @@ fanOut' =
     Tagged (NodeA 2 Nothing) `Cons`
     Tagged (NodeB 3 (Just 4)) `Cons`
       Tagged (NodeC 4 Nothing Nothing) `Cons` Nil
+
+-- | Our "read-only" patterns work as expected
+deconstruct :: (NodeC, NodeA, NodeB, NodeC)
+deconstruct =
+  case tree fanOut of
+    c1 :<: (a, b :<: c2) -> (c1, a, b, c2)
 
 -- -- | Graph looks like
 -- -- @

@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -125,7 +126,7 @@ main = do
         transactionUndo
         void . insert $ District "bump id to prove we're doing something mildly interesting"
 
-        (st :<: te :<: sc :<: Always di :<: Nil) <-
+        (tree -> st :<: te :<: sc :<: Always di) <-
           insertGraph =<< liftIO (generate arbitrary)
           :: M (Tree (Entity Student :<: Entity Teacher :<: Entity School :<: Always (Entity District)))
 

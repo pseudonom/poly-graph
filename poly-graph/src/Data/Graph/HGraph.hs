@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
@@ -8,6 +9,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+-- Pattern synonyms and exhaustivity checking don't work well together
+{-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 
 module Data.Graph.HGraph
   ( module Data.Graph.HGraph
@@ -24,8 +27,8 @@ class a `Link` b where
   infixr 5 `link`
   link :: a -> b -> a
 
-infixr 5 :<:
-pattern a :<: b <- Tagged a `Cons` b
+infixr 5 :::
+pattern a ::: b <- Tagged a `Cons` b
 
 class a `LinkR` b where
   linkR :: a -> b -> a
@@ -53,7 +56,8 @@ infixr 5 ~>
 (~>) :: ((Tagged '(i, is) a) `LinkR` HGraph b) => a -> HGraph b -> HGraph ('(a, i, is) ': b)
 a ~> b = (Tagged a `linkR` b) `Cons` b
 
-data a :<: b
+infixr 5 :<:
+data a :<: b = a :<: b
 type Tree a = HGraph (Tree' 0 1 a)
 infixr 5 :++:
 type family x :++: y where
@@ -69,3 +73,29 @@ type family Tree' n x a where
   Tree' n x (b :<: c :<: d) = '(b, n, '[n + 1]) ': Tree' (n + 1) x (c :<: d)
   Tree' n x (b :<: c) = '(b, n, '[n + 1]) ': '(c, n + 1, '[]) ': '[]
   Tree' n x b = '(b, n, '[]) ': '[]
+
+class TreeConv a b | a -> b where
+  tree :: a -> b
+-- | Points at nothing
+instance TreeConv (HGraph ('(a, n, '[]) ': x)) a where
+  tree (a ::: Nil) = a
+-- | Branch
+instance
+  ( TreeConv (HGraph ('(b, m, x) ': z)) i
+  , TreeConv (HGraph ('(c, o, y) ': z)) j
+  ) =>
+  TreeConv (HGraph ('(a, n, '[m, o]) ': '(b, m, x) ': '(c, o, y) ': z)) (a :<: (i, j)) where
+  tree (a ::: b `Cons` c `Cons` x) = a :<: (tree $ b `Cons` x, tree $ c `Cons` x)
+-- | Points at wrong thing
+instance {-# OVERLAPPABLE #-}
+  ( TreeConv (HGraph ('(a, n, '[m]) ': y)) i
+  , TreeConv (HGraph ('(b, o, x) ': y)) j
+  ) =>
+  TreeConv (HGraph ('(a, n, '[m]) ': '(b, o, x) ': y)) (i :<: j) where
+  tree (a `Cons` b `Cons` c) = tree (a `Cons` c) :<: tree (b `Cons` c)
+-- | Adjacent
+instance
+  ( TreeConv (HGraph ('(b, m, x) ': y)) j
+  ) =>
+  TreeConv (HGraph ('(a, n, '[m]) ': '(b, m, x) ': y)) (a :<: j) where
+  tree (a ::: b) = a :<: tree b

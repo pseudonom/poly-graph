@@ -9,7 +9,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
--- Pattern synonyms and exhuastivity checking don't work well together
+-- Pattern synonyms and exhaustivity checking don't work well together
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 
 module Data.Graph.HGraph.Persistent where
@@ -40,13 +40,13 @@ class InsertEntityGraph a where
 -- because then we don't know which type of backend to use
 instance (InsertEntityGraph a) => InsertEntityGraph (HGraph '[ '(a, i, is)]) where
   type InsertEntityGraphBackend (HGraph '[ '(a, i, is)]) = InsertEntityGraphBackend a
-  insertEntityGraph (a :<: Nil) = insertEntityGraph a
+  insertEntityGraph (a ::: Nil) = insertEntityGraph a
 instance
   ( InsertEntityGraph a, InsertEntityGraph (HGraph (b ': c))
   , InsertEntityGraphBackend a ~ InsertEntityGraphBackend (HGraph (b ': c))
   ) => InsertEntityGraph (HGraph ('(a, i, is) ': b ': c)) where
   type InsertEntityGraphBackend (HGraph ('(a, i, is) ': b ': c)) = InsertEntityGraphBackend a
-  insertEntityGraph (a :<: b) = insertEntityGraph b >> insertEntityGraph a
+  insertEntityGraph (a ::: b) = insertEntityGraph b >> insertEntityGraph a
 
 instance InsertEntityGraph (Entity a) where
   type InsertEntityGraphBackend (Entity a) = PersistEntityBackend a
@@ -92,7 +92,7 @@ instance
   , InsertGraph a b backend
   )
   => InsertGraph (HGraph '[ '(a, i, is)]) (HGraph '[ '(b, i, is)]) backend where
-  insertGraph (a :<: Nil) = do
+  insertGraph (a ::: Nil) = do
     e <- insertGraph a
     pure $ e `Cons` Nil
 
