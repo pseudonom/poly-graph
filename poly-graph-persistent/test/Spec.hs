@@ -104,8 +104,8 @@ main :: IO ()
 main = do
   runConn $ runMigrationUnsafe testMigrate
   hspec $
-    describe "persistent" $ do
-      it "foo" $ db $ do
+    describe "poly-graph-persistent" $
+      it "Manual creation and insertion should produce the same results as automatic creation and insertion" $ db $ do
         void . insert $ District "bump id to prove we're doing something mildly interesting"
 
         diB <- liftIO $ generate arbitrary
