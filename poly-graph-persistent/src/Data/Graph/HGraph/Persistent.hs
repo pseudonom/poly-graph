@@ -11,6 +11,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 -- Pattern synonyms and exhaustivity checking don't work well together
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Graph.HGraph.Persistent where
 
@@ -35,6 +36,12 @@ class InsertEntityGraph a where
   insertEntityGraph
     :: (Monad m, MonadIO m, PersistStore (InsertEntityGraphBackend a))
     => a -> ReaderT (InsertEntityGraphBackend a) m ()
+
+instance {-# OVERLAPPING #-} (Key a, b) `GLink` Entity a where
+  (_, b) `gLink` (Entity k _) = (k, b)
+instance {-# OVERLAPPING #-} (Maybe (Key a), b) `GLink` Maybe (Entity a) where
+  (_, b) `gLink` (Just (Entity k _)) = (Just k, b)
+  (_, b) `gLink` Nothing = (Nothing, b)
 
 -- Can't make `HGraph '[]` the base case
 -- because then we don't know which type of backend to use

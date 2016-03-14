@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -29,6 +30,7 @@ import Database.Persist
 import Database.Persist.Sql
 import Database.Persist.Sqlite (withSqlitePool)
 import Database.Persist.TH
+import GHC.Generics (Generic)
 import System.Log.FastLogger (fromLogStr)
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 import Test.QuickCheck.Gen (generate)
@@ -70,22 +72,19 @@ instance {-# OVERLAPPABLE #-} (a `Link` Maybe (Entity b)) => a `Link` Maybe b wh
 share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistUpperCase|
   District
     name Text
-    deriving Show Eq
+    deriving Show Eq Generic
   School
     name Text
     districtId DistrictId Maybe
-    deriving Show Eq
+    deriving Show Eq Generic
   Teacher
     name Text
     schoolId SchoolId
-    deriving Show Eq
+    deriving Show Eq Generic
   Student
     name Text
     teacherId TeacherId
-    deriving Show Eq
-  Lectern
-    teacherId TeacherId Maybe -- Some lecterns are unowned
-    deriving Show Eq
+    deriving Show Eq Generic
 |]
 instance Arbitrary District where
   arbitrary = pure $ District "foo"
@@ -95,15 +94,10 @@ instance Arbitrary Teacher where
   arbitrary = Teacher "baz" <$> arbitrary
 instance Arbitrary Student where
   arbitrary = Student "qux" <$> arbitrary
-instance Arbitrary Lectern where
-  arbitrary = Lectern <$> arbitrary
 
-instance Student `Link` Entity Teacher where
-  s `link` Entity tId _ = s & studentTeacherId .~ tId
-instance Teacher `Link` Entity School where
-  t `link` Entity sId _ = t & teacherSchoolId .~ sId
-instance School `Link` Maybe (Entity District) where
-  s `link` d = s & schoolDistrictId .~ d ^? _Just . _entityKey
+instance Student `Link` Entity Teacher
+instance Teacher `Link` Entity School
+instance School `Link` Maybe (Entity District)
 
 type M = ReaderT SqlBackend (LoggingT (ResourceT IO))
 main :: IO ()
@@ -127,10 +121,10 @@ main = do
         void . insert $ District "bump id to prove we're doing something mildly interesting"
 
         (tree -> st :<: te :<: sc :<: Always di) <-
-          insertGraph =<< liftIO (generate arbitrary)
-          :: M (Tree (Entity Student :<: Entity Teacher :<: Entity School :<: Always (Entity District)))
+          insertGraph =<< liftIO (generate arbitrary) ::
+          M (Tree (Entity Student :<: Entity Teacher :<: Entity School :<: Always (Entity District)))
 
         let manualTree = (Entity stId stB, Entity teId teB, Entity scId scB, Entity diId diB)
         let autoTree = (st, te, sc, di)
-        liftIO $ manualTree `shouldBe` autoTree
+        liftIO $ autoTree `shouldBe` manualTree
         liftIO $ print autoTree

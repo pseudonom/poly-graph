@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -17,7 +18,8 @@ module Data.Graph.HGraph
   , X.HGraph(Nil)
   ) where
 
-import Data.Tagged
+import Data.Tagged (Tagged(..), retag)
+import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import GHC.TypeLits
 
 import Data.Graph.HGraph.Internal as X
@@ -26,6 +28,19 @@ infixr 5 `Link`
 class a `Link` b where
   infixr 5 `link`
   link :: a -> b -> a
+  default link :: (HasEot a, (Eot a) `GLink` b) => a -> b -> a
+  link a b = fromEot $ toEot a `gLink` b
+
+class a `GLink` b where
+  infixr 5 `gLink`
+  gLink :: a -> b -> a
+instance (b `GLink` c) => (a, b) `GLink` c where
+  (a, b) `gLink` c = (a, b `gLink` c)
+instance (a `GLink` c, b `GLink` c) => Either a b `GLink` c where
+  Left a `gLink` b = Left $ a `gLink` b
+  Right a `gLink` b = Right $ a `gLink` b
+instance GLink Void a where
+  gLink _ _ = error "impossible"
 
 infixr 5 :::
 pattern a ::: b <- Tagged a `Cons` b
