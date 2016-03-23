@@ -39,12 +39,6 @@ import Data.Graph.HGraph
 import Data.Graph.HGraph.Arbitrary ()
 import Data.Graph.HGraph.Persistent
 
-_entityKey :: Lens' (Entity a) (Key a)
-_entityKey = lens getter setter
-  where
-    getter (Entity k _) = k
-    setter (Entity _ v) k = Entity k v
-
 db :: SqlPersistT (LoggingT (ResourceT IO)) a -> IO ()
 db actions = runResourceT $ runConn $ actions >> transactionUndo
 
@@ -61,13 +55,6 @@ instance (ToBackendKey SqlBackend a) => Arbitrary (Key a) where
   arbitrary = toSqlKey <$> arbitrary
 instance (ToBackendKey SqlBackend a, Arbitrary a) => Arbitrary (Entity a) where
   arbitrary = Entity <$> arbitrary <*> arbitrary
-instance {-# OVERLAPPABLE #-} (a `Link` Entity b) => Entity a `Link` Entity b where
-  Entity id' a `link` b = Entity id' $ a `link` b
--- | No-op instances for use with `insertGraph`
-instance {-# OVERLAPPABLE #-} (Entity a `Link` Entity b) => a `Link` b where
-  a `link` _ = a
-instance {-# OVERLAPPABLE #-} (a `Link` Maybe (Entity b)) => a `Link` Maybe b where
-  a `link` _ = a
 
 share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistUpperCase|
   District

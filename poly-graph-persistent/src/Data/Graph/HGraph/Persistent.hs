@@ -120,3 +120,11 @@ instance (InsertGraph a (Entity a) backend) => InsertGraph (Always a) (Always (E
 instance (InsertGraph a (Entity a) backend) => InsertGraph (Maybe a) (Maybe (Entity a)) backend where
   insertGraph (Just a) = Just <$> insertGraph a
   insertGraph Nothing = pure Nothing
+
+instance {-# OVERLAPPABLE #-} (a `Link` Entity b) => Entity a `Link` Entity b where
+  Entity id' a `link` b = Entity id' $ a `link` b
+-- | No-op instances for use with `insertGraph`
+instance {-# OVERLAPPABLE #-} (Entity a `Link` Entity b) => a `Link` b where
+  a `link` _ = a
+instance {-# OVERLAPPABLE #-} (a `Link` Maybe (Entity b)) => a `Link` Maybe b where
+  a `link` _ = a
