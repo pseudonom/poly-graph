@@ -82,9 +82,9 @@ instance Arbitrary Teacher where
 instance Arbitrary Student where
   arbitrary = Student "qux" <$> arbitrary
 
-instance Student `Link` Entity Teacher
-instance Teacher `Link` Entity School
-instance School `Link` Maybe (Entity District)
+instance Student `PointsAt` Entity Teacher
+instance Teacher `PointsAt` Entity School
+instance School `PointsAt` Maybe (Entity District)
 
 type M = ReaderT SqlBackend (LoggingT (ResourceT IO))
 main :: IO ()

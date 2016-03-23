@@ -34,20 +34,20 @@ instance (Arbitrary a) => Arbitrary (Always a) where
   arbitrary = Always <$> arbitrary
 instance Arbitrary (Never a) where
   arbitrary = pure Never
-instance (a `Link` b) => (Always a) `Link` b where
-  (Always a) `link` b = Always $ a `link` b
-instance (a `Link` (Maybe b)) => a `Link` (Never b) where
-  a `link` Never = a `link` (Nothing :: Maybe b)
-instance (a `Link` Maybe b) => a `Link` (Always b) where
-  a `link` (Always b) = a `link` Just b
-instance (a `Link` Maybe b) => (Always a) `Link` (Always b) where
-  a `link` (Always b) = a `link` Just b
-instance (a `Link` Maybe b) => (Always a) `Link` (Never b) where
-  (Always a) `link` Never = Always $ a `link` (Nothing :: Maybe b)
+instance (a `PointsAt` b) => (Always a) `PointsAt` b where
+  (Always a) `pointsAt` b = Always $ a `pointsAt` b
+instance (a `PointsAt` (Maybe b)) => a `PointsAt` (Never b) where
+  a `pointsAt` Never = a `pointsAt` (Nothing :: Maybe b)
+instance (a `PointsAt` Maybe b) => a `PointsAt` (Always b) where
+  a `pointsAt` (Always b) = a `pointsAt` Just b
+instance (a `PointsAt` Maybe b) => (Always a) `PointsAt` (Always b) where
+  a `pointsAt` (Always b) = a `pointsAt` Just b
+instance (a `PointsAt` Maybe b) => (Always a) `PointsAt` (Never b) where
+  (Always a) `pointsAt` Never = Always $ a `pointsAt` (Nothing :: Maybe b)
 
 instance Arbitrary (HGraph '[]) where
   arbitrary = pure Nil
 instance
-  (Tagged '(i, is) a `LinkR` HGraph b, Arbitrary a, Arbitrary (HGraph b)) =>
+  (Tagged '(i, is) a `PointsAtR` HGraph b, Arbitrary a, Arbitrary (HGraph b)) =>
   Arbitrary (HGraph ('(a, i, is) ': b)) where
   arbitrary = (~>) <$> arbitrary <*> arbitrary

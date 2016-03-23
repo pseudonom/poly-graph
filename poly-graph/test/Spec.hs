@@ -54,16 +54,16 @@ main = hspec $
     it "works for a complicated mess" $
       inAndOut `shouldBe` inAndOut'
 
-instance Node `Link` Node where
-  (Node id1 _) `link` (Node id2 _) = Node id1 (Just id2)
-instance NodeA `Link` NodeB where
-  (NodeA ida _) `link` (NodeB idb _) = NodeA ida (Just idb)
-instance NodeB `Link` NodeC where
-  (NodeB idb _) `link` (NodeC idc _ _) = NodeB idb (Just idc)
-instance NodeC `Link` NodeA where
-  (NodeC idc _ idb) `link` (NodeA ida _) = NodeC idc (Just ida) idb
-instance NodeC `Link` NodeB where
-  (NodeC idc ida _) `link` (NodeB idb _) = NodeC idc ida (Just idb)
+instance Node `PointsAt` Node where
+  (Node id1 _) `pointsAt` (Node id2 _) = Node id1 (Just id2)
+instance NodeA `PointsAt` NodeB where
+  (NodeA ida _) `pointsAt` (NodeB idb _) = NodeA ida (Just idb)
+instance NodeB `PointsAt` NodeC where
+  (NodeB idb _) `pointsAt` (NodeC idc _ _) = NodeB idb (Just idc)
+instance NodeC `PointsAt` NodeA where
+  (NodeC idc _ idb) `pointsAt` (NodeA ida _) = NodeC idc (Just ida) idb
+instance NodeC `PointsAt` NodeB where
+  (NodeC idc ida _) `pointsAt` (NodeB idb _) = NodeC idc ida (Just idb)
 
 simpleChain ::
   Tree (

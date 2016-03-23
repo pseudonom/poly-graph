@@ -37,11 +37,11 @@ class InsertEntityGraph a where
     :: (Monad m, MonadIO m, PersistStore (InsertEntityGraphBackend a))
     => a -> ReaderT (InsertEntityGraphBackend a) m ()
 
-instance {-# OVERLAPPING #-} (Key a, b) `GLink` Entity a where
-  (_, b) `gLink` (Entity k _) = (k, b)
-instance {-# OVERLAPPING #-} (Maybe (Key a), b) `GLink` Maybe (Entity a) where
-  (_, b) `gLink` (Just (Entity k _)) = (Just k, b)
-  (_, b) `gLink` Nothing = (Nothing, b)
+instance {-# OVERLAPPING #-} (Key a, b) `GPointsAt` Entity a where
+  (_, b) `gPointsAt` (Entity k _) = (k, b)
+instance {-# OVERLAPPING #-} (Maybe (Key a), b) `GPointsAt` Maybe (Entity a) where
+  (_, b) `gPointsAt` (Just (Entity k _)) = (Just k, b)
+  (_, b) `gPointsAt` Nothing = (Nothing, b)
 
 -- Can't make `HGraph '[]` the base case
 -- because then we don't know which type of backend to use
@@ -82,7 +82,7 @@ class InsertGraph a b backend | b -> a, a -> backend , b -> backend where
   insertGraph :: (Monad m, MonadIO m, PersistStore backend) => a -> ReaderT backend m b
 
 instance
-  ( Tagged '(i, is) a `LinkR` HGraph (e ': f)
+  ( Tagged '(i, is) a `PointsAtR` HGraph (e ': f)
   , InsertGraph (HGraph (b ': c)) (HGraph (e ': f)) backend
   , InsertGraph a d backend
   , (b ': c) ~ UnwrapAll (e ': f)
@@ -91,7 +91,7 @@ instance
   => InsertGraph (HGraph ('(a, i, is) ': b ': c)) (HGraph ('(d, i, is) ': e ': f)) backend where
   insertGraph (a `Cons` b) = do
     b' <- insertGraph b
-    let a' = unTagged $ a `linkR` b'
+    let a' = unTagged $ a `pointsAtR` b'
     a'' <- insertGraph a'
     pure $ a'' `Cons` b'
 instance
@@ -121,10 +121,10 @@ instance (InsertGraph a (Entity a) backend) => InsertGraph (Maybe a) (Maybe (Ent
   insertGraph (Just a) = Just <$> insertGraph a
   insertGraph Nothing = pure Nothing
 
-instance {-# OVERLAPPABLE #-} (a `Link` Entity b) => Entity a `Link` Entity b where
-  Entity id' a `link` b = Entity id' $ a `link` b
+instance {-# OVERLAPPABLE #-} (a `PointsAt` Entity b) => Entity a `PointsAt` Entity b where
+  Entity id' a `pointsAt` b = Entity id' $ a `pointsAt` b
 -- | No-op instances for use with `insertGraph`
-instance {-# OVERLAPPABLE #-} (Entity a `Link` Entity b) => a `Link` b where
-  a `link` _ = a
-instance {-# OVERLAPPABLE #-} (a `Link` Maybe (Entity b)) => a `Link` Maybe b where
-  a `link` _ = a
+instance {-# OVERLAPPABLE #-} (Entity a `PointsAt` Entity b) => a `PointsAt` b where
+  a `pointsAt` _ = a
+instance {-# OVERLAPPABLE #-} (a `PointsAt` Maybe (Entity b)) => a `PointsAt` Maybe b where
+  a `pointsAt` _ = a

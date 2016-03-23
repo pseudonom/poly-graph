@@ -22,8 +22,8 @@ data Node
   , pointer :: Maybe Int
   } deriving (Show, Eq)
 $(derive makeArbitrary ''Node)
-instance Node `Link` Maybe Node where
-  (Node id1 _) `link` n2 = Node id1 $ nodeId <$> n2
+instance Node `PointsAt` Maybe Node where
+  (Node id1 _) `pointsAt` n2 = Node id1 $ nodeId <$> n2
 
 main :: IO ()
 main = do

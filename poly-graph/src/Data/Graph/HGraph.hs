@@ -24,52 +24,52 @@ import GHC.TypeLits
 
 import Data.Graph.HGraph.Internal as X
 
-infixr 5 `Link`
-class a `Link` b where
-  infixr 5 `link`
-  link :: a -> b -> a
-  default link :: (HasEot a, (Eot a) `GLink` b) => a -> b -> a
-  link a b = fromEot $ toEot a `gLink` b
+infixr 5 `PointsAt`
+class a `PointsAt` b where
+  infixr 5 `pointsAt`
+  pointsAt :: a -> b -> a
+  default pointsAt :: (HasEot a, (Eot a) `GPointsAt` b) => a -> b -> a
+  pointsAt a b = fromEot $ toEot a `gPointsAt` b
 
-class a `GLink` b where
-  infixr 5 `gLink`
-  gLink :: a -> b -> a
-instance (b `GLink` c) => (a, b) `GLink` c where
-  (a, b) `gLink` c = (a, b `gLink` c)
-instance (a `GLink` c, b `GLink` c) => Either a b `GLink` c where
-  Left a `gLink` b = Left $ a `gLink` b
-  Right a `gLink` b = Right $ a `gLink` b
-instance GLink Void a where
-  gLink _ _ = error "impossible"
+class a `GPointsAt` b where
+  infixr 5 `gPointsAt`
+  gPointsAt :: a -> b -> a
+instance (b `GPointsAt` c) => (a, b) `GPointsAt` c where
+  (a, b) `gPointsAt` c = (a, b `gPointsAt` c)
+instance (a `GPointsAt` c, b `GPointsAt` c) => Either a b `GPointsAt` c where
+  Left a `gPointsAt` b = Left $ a `gPointsAt` b
+  Right a `gPointsAt` b = Right $ a `gPointsAt` b
+instance GPointsAt Void a where
+  gPointsAt _ _ = error "impossible"
 
 infixr 5 :::
 pattern a ::: b <- Tagged a `Cons` b
 
-class a `LinkR` b where
-  linkR :: a -> b -> a
+class a `PointsAtR` b where
+  pointsAtR :: a -> b -> a
 -- | End of graph
-instance {-# OVERLAPPING #-} Tagged '(i, '[]) a `LinkR` HGraph '[] where
-  linkR = const
+instance {-# OVERLAPPING #-} Tagged '(i, '[]) a `PointsAtR` HGraph '[] where
+  pointsAtR = const
 -- | Points at nothing
-instance Tagged '(i, '[]) a `LinkR` (HGraph b) where
-  linkR = const
+instance Tagged '(i, '[]) a `PointsAtR` (HGraph b) where
+  pointsAtR = const
 -- | Points at wrong thing
-instance (Tagged '(i, j ': js) a `LinkR` HGraph c) => Tagged '(i, j ': js) a `LinkR` (HGraph ('(b, k, ls) ': c)) where
-  a `linkR` Cons _ c = a `linkR` c
+instance (Tagged '(i, j ': js) a `PointsAtR` HGraph c) => Tagged '(i, j ': js) a `PointsAtR` (HGraph ('(b, k, ls) ': c)) where
+  a `pointsAtR` Cons _ c = a `pointsAtR` c
 -- | Adjacent
 instance {-# OVERLAPPING #-}
-  (a `Link` b, Tagged '(i, js) a `LinkR` (HGraph ('(b, j, ks) ': c))) =>
-  Tagged '(i, j ': js) a `LinkR` (HGraph ('(b, j, ks) ': c)) where
-  a `linkR` Cons b c = retag $ a' `linkR` r
+  (a `PointsAt` b, Tagged '(i, js) a `PointsAtR` (HGraph ('(b, j, ks) ': c))) =>
+  Tagged '(i, j ': js) a `PointsAtR` (HGraph ('(b, j, ks) ': c)) where
+  a `pointsAtR` Cons b c = retag $ a' `pointsAtR` r
     where
       r :: HGraph ('(b, j, ks) ': c)
       r = Cons b c
       a' :: Tagged '(i, js) a
-      a' = retag $ (`link` unTagged b) <$> a
+      a' = retag $ (`pointsAt` unTagged b) <$> a
 
 infixr 5 ~>
-(~>) :: ((Tagged '(i, is) a) `LinkR` HGraph b) => a -> HGraph b -> HGraph ('(a, i, is) ': b)
-a ~> b = (Tagged a `linkR` b) `Cons` b
+(~>) :: ((Tagged '(i, is) a) `PointsAtR` HGraph b) => a -> HGraph b -> HGraph ('(a, i, is) ': b)
+a ~> b = (Tagged a `pointsAtR` b) `Cons` b
 
 infixr 5 :<:
 data a :<: b = a :<: b
