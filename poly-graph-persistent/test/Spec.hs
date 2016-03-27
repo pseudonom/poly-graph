@@ -17,7 +17,7 @@
 
 import Test.Hspec
 
-import Control.Lens
+import Control.Lens hiding ((:<))
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Logger (LoggingT(..))
@@ -107,9 +107,9 @@ main = do
         transactionUndo
         void . insert $ District "bump id to prove we're doing something mildly interesting"
 
-        (tree -> st :<: te :<: sc :<: Always di) <-
+        (tree -> st :< te :< sc :< Always di) <-
           insertGraph =<< liftIO (generate arbitrary) ::
-          M (Tree (Entity Student :<: Entity Teacher :<: Entity School :<: Always (Entity District)))
+          M (Tree (Entity Student :< Entity Teacher :< Entity School :< Always (Entity District)))
 
         let manualTree = (Entity stId stB, Entity teId teB, Entity scId scB, Entity diId diB)
         let autoTree = (st, te, sc, di)

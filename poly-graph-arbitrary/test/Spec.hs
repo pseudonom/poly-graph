@@ -27,10 +27,10 @@ instance Node `PointsAt` Maybe Node where
 
 main :: IO ()
 main = do
-  print =<< generate (arbitrary :: Gen (Tree (Node :<: Maybe Node)))
+  print =<< generate (arbitrary :: Gen (Tree (Node :< Maybe Node)))
   hspec $
     describe "Arbitrary" $ do
-      prop "`Always` always links" $ \((tree -> x :<: Always y) :: Tree (Node :<: Always Node)) ->
+      prop "`Always` always links" $ \((tree -> x :< Always y) :: Tree (Node :< Always Node)) ->
           pointer x `shouldBe` Just (nodeId y)
-      prop "`Never` never links" $ \((tree -> x :<: Never) :: Tree (Node :<: Never Node)) ->
+      prop "`Never` never links" $ \((tree -> x :< Never) :: Tree (Node :< Never Node)) ->
         pointer x `shouldBe` Nothing

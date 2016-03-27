@@ -17,7 +17,7 @@ import Data.Tagged
 import Data.Typeable (Typeable)
 
 infixr 5 `Cons`
-data HGraph a where
+data HGraph y where
   Cons :: Tagged '((i :: k), (is :: [k])) a -> HGraph b -> HGraph ('(a, i, is) ': b)
   Nil :: HGraph '[]
 

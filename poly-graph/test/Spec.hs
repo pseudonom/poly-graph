@@ -67,8 +67,8 @@ instance NodeC `PointsAt` NodeB where
 
 simpleChain ::
   Tree (
-    NodeA :<:
-      NodeB :<:
+    NodeA :<
+      NodeB :<
         NodeC
   )
 simpleChain =
@@ -101,9 +101,9 @@ simpleChain' =
 -- @
 fanOut ::
   Tree (
-    NodeC :<:
+    NodeC :<
       ( NodeA
-      , NodeB :<: NodeC
+      , NodeB :< NodeC
       )
   )
 fanOut =
@@ -129,7 +129,7 @@ fanOut' =
 deconstruct :: (NodeC, NodeA, NodeB, NodeC)
 deconstruct =
   case tree fanOut of
-    c1 :<: (a, b :<: c2) -> (c1, a, b, c2)
+    c1 :< (a, b :< c2) -> (c1, a, b, c2)
 
 -- -- | Graph looks like
 -- -- @
