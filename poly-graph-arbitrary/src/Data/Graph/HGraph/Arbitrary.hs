@@ -34,15 +34,17 @@ instance (Arbitrary a) => Arbitrary (Always a) where
   arbitrary = Always <$> arbitrary
 instance Arbitrary (Never a) where
   arbitrary = pure Never
-instance (a `PointsAt` b) => (Always a) `PointsAt` b where
+instance {-# OVERLAPPABLE #-} (a `PointsAt` b) => (Always a) `PointsAt` b where
   (Always a) `pointsAt` b = Always $ a `pointsAt` b
-instance (a `PointsAt` (Maybe b)) => a `PointsAt` (Never b) where
+instance (a `PointsAt` Maybe b) => a `PointsAt` (Never b) where
   a `pointsAt` Never = a `pointsAt` (Nothing :: Maybe b)
 instance (a `PointsAt` Maybe b) => a `PointsAt` (Always b) where
   a `pointsAt` (Always b) = a `pointsAt` Just b
-instance (a `PointsAt` Maybe b) => (Always a) `PointsAt` (Always b) where
-  a `pointsAt` (Always b) = a `pointsAt` Just b
-instance (a `PointsAt` Maybe b) => (Always a) `PointsAt` (Never b) where
+instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => (Always a) `PointsAt` (Maybe b) where
+  (Always a) `pointsAt` b = Always $ a `pointsAt` b
+instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => (Always a) `PointsAt` (Always b) where
+  Always a `pointsAt` Always b = Always $ a `pointsAt` Just b
+instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => (Always a) `PointsAt` (Never b) where
   (Always a) `pointsAt` Never = Always $ a `pointsAt` (Nothing :: Maybe b)
 
 instance Arbitrary (HGraph '[]) where

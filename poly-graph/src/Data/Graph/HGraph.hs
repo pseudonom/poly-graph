@@ -41,6 +41,8 @@ instance (b `GPointsAt` c) => (a, b) `GPointsAt` c where
 instance (a `GPointsAt` c, b `GPointsAt` c) => Either a b `GPointsAt` c where
   Left a `gPointsAt` b = Left $ a `gPointsAt` b
   Right a `gPointsAt` b = Right $ a `gPointsAt` b
+instance GPointsAt () a where
+  gPointsAt _ _ = ()
 instance GPointsAt Void a where
   gPointsAt _ _ = error "impossible"
 
