@@ -89,6 +89,11 @@ type family Tree' n x a where
     '(b, n, '[n + 1 * BranchSize ^ x, n + 2 * BranchSize ^ x]) ':
       (Tree' (n + 1 * BranchSize ^ x) (x + 1) c) ++
       (Tree' (n + 2 * BranchSize ^ x) (x + 1) d)
+  Tree' n x (b :< (c, d, e)) =
+    '(b, n, '[n + 1 * BranchSize ^ x, n + 2 * BranchSize ^ x, n + 3 * BranchSize ^ x]) ':
+      (Tree' (n + 1 * BranchSize ^ x) (x + 1) c) ++
+      (Tree' (n + 2 * BranchSize ^ x) (x + 1) d) ++
+      (Tree' (n + 3 * BranchSize ^ x) (x + 1) e)
   Tree' n x (b :< c :< d) = '(b, n, '[n + 1]) ': Tree' (n + 1) x (c :< d)
   Tree' n x (b :< c) = '(b, n, '[n + 1]) ': '(c, n + 1, '[]) ': '[]
   Tree' n x b = '(b, n, '[]) ': '[]
@@ -105,6 +110,13 @@ instance
   ) =>
   TreeConv (HGraph ('(a, n, '[m, o]) ': '(b, m, x) ': '(c, o, y) ': z)) (a :< (i, j)) where
   tree (a :<: b `Cons` c `Cons` x) = a :< (tree $ b `Cons` x, tree $ c `Cons` x)
+instance
+  ( TreeConv (HGraph ('(b, m, x) ': q)) i
+  , TreeConv (HGraph ('(c, o, y) ': q)) j
+  , TreeConv (HGraph ('(d, p, z) ': q)) k
+  ) =>
+  TreeConv (HGraph ('(a, n, '[m, o, p]) ': '(b, m, x) ': '(c, o, y) ': '(d, p, z) ': q)) (a :< (i, j, k)) where
+  tree (a :<: b `Cons` c `Cons` d `Cons` x) = a :< (tree $ b `Cons` x, tree $ c `Cons` x, tree $ d `Cons` x)
 -- | Points at wrong thing
 instance {-# OVERLAPPABLE #-}
   ( TreeConv (HGraph ('(a, n, '[m]) ': y)) i
