@@ -16,6 +16,8 @@
 module Data.Graph.HGraph
   ( module Data.Graph.HGraph
   , X.HGraph(Nil)
+  , X._head
+  , X._tail
   ) where
 
 import Data.Tagged (Tagged(..), retag)

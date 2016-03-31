@@ -32,3 +32,12 @@ instance Eq (HGraph '[]) where
 deriving instance Typeable (HGraph a)
 
 type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
+type Lens' s a = Lens s s a a
+
+-- | Please don't use these lenses to edit the FK fields
+_head :: Lens' (HGraph ('(a, i, is) ': b)) a
+_head pure' (Tagged a `Cons` b) = (`Cons` b)  . Tagged <$> pure' a
+
+-- | Please don't use these lenses to edit the FK fields
+_tail :: Lens' (HGraph (a ': b)) (HGraph b)
+_tail pure' (a `Cons` b) = (a `Cons`) <$> pure' b
