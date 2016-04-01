@@ -34,8 +34,8 @@ pattern Never = Proxy
 class InsertEntityGraph a where
   type InsertEntityGraphBackend a
   insertEntityGraph
-    :: (Monad m, MonadIO m, PersistStore (InsertEntityGraphBackend a))
-    => a -> ReaderT (InsertEntityGraphBackend a) m ()
+    :: (Monad m, MonadIO m, PersistStore backend, BaseBackend backend ~ InsertEntityGraphBackend a)
+    => a -> ReaderT backend m ()
 
 instance {-# OVERLAPPING #-}
   (b `GPointsAt` Entity a)
@@ -114,7 +114,7 @@ instance
   ) => InsertGraph a (Tagged '(i, is) b) backend where
   insertGraph a = Tagged <$> insertGraph a
 
-instance ( PersistEntityBackend a ~ backend, PersistEntity a
+instance ( PersistEntityBackend a ~ BaseBackend backend, PersistEntity a
          ) => InsertGraph a (Entity a) backend where
   insertGraph a = flip Entity a <$> insert a
 -- The constraint here isn't strictly necessary but it allows us to add the `a -> backend` and `b -> backend` fundeps
