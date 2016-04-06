@@ -54,14 +54,28 @@ instance GPointsAt Void a where
 infixr 5 :<:
 pattern a :<: b <- Node a `Cons` b
 
+class GNullify a where
+  gNullify :: a -> a
+instance (GNullify b) => GNullify (a, b) where
+  gNullify (a, b) = (a, gNullify b)
+instance (GNullify a, GNullify b) => GNullify (Either a b) where
+  gNullify (Left a) = Left $ gNullify a
+  gNullify (Right b) = Right $ gNullify b
+instance GNullify () where
+  gNullify _ = ()
+instance GNullify Void where
+  gNullify _ = error "impossible"
+
 class a `PointsAtR` b where
   pointsAtR :: a -> b -> a
+
 -- | End of graph
-instance {-# OVERLAPPING #-} Node i '[] a `PointsAtR` HGraph '[] where
-  pointsAtR = const
+instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i '[] a `PointsAtR` HGraph '[] where
+  -- We use `GNullify` so we can default a `Maybe` key at the end of the graph to `Nothing`
+  a `pointsAtR` _ = fromEot . gNullify $ toEot a
 -- | Points at nothing
-instance Node i '[] a `PointsAtR` (HGraph b) where
-  pointsAtR = const
+instance (HasEot a, GNullify (Eot a)) => Node i '[] a `PointsAtR` (HGraph b) where
+  a `pointsAtR` _ = fromEot . gNullify $ toEot a
 -- | Points at wrong thing
 instance (Node i (j ': js) a `PointsAtR` HGraph c) => Node i (j ': js) a `PointsAtR` (HGraph ('(b, k, ls) ': c)) where
   a `pointsAtR` Cons _ c = a `pointsAtR` c

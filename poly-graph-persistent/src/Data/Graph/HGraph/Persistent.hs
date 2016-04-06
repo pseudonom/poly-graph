@@ -22,6 +22,7 @@ import Data.Functor.Identity
 import Data.Proxy
 import Database.Persist
 import Database.Persist.Sql
+import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
 import Data.Graph.HGraph
@@ -50,6 +51,18 @@ instance
   (Maybe (Key a), b) `GPointsAt` (Entity a) where
   (_, b) `gPointsAt` e@(Entity k _) = (Just k, b `gPointsAt` e)
 
+instance
+  {-# OVERLAPPING #-}
+  (GNullify b) =>
+  GNullify (Maybe (Key a), b) where
+  gNullify (_, b) = (Nothing, gNullify b)
+
+-- | End of graph
+instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i '[] (Entity a) `PointsAtR` HGraph '[] where
+  Node (Entity i a) `pointsAtR` _ = Node . Entity i . fromEot . gNullify $ toEot a
+-- | Points at nothing
+instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i '[] (Entity a) `PointsAtR` (HGraph b) where
+  Node (Entity i a) `pointsAtR` _ = Node . Entity i . fromEot . gNullify $ toEot a
 
 class InsertEntityGraph a backend | a -> backend where
   insertEntityGraph ::

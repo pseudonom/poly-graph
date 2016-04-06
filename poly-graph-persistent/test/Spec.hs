@@ -19,7 +19,7 @@
 
 import Test.Hspec
 
-import Control.Lens hiding ((:<))
+import Control.Lens hiding ((:<), _head)
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Logger (LoggingT(..))
@@ -103,6 +103,11 @@ main = do
   runConn $ runMigrationUnsafe testMigrate
   hspec $
     describe "poly-graph-persistent" $ do
+      it "allows defaults maybe keys to nothing" $ db $ do
+        graph <-
+          liftIO (generate arbitrary)
+            :: M (HGraph '[ '(Entity SelfRef, "Plain", '[]) ])
+        liftIO $ (view selfRefSelfRefId . entityVal . view _head $ graph) `shouldBe` Nothing
       it "works with Maybe key to plain" $ db $ do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
