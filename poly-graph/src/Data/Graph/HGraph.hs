@@ -12,6 +12,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 -- Pattern synonyms and exhaustivity checking don't work well together
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Graph.HGraph
   ( module Data.Graph.HGraph
@@ -23,6 +24,7 @@ module Data.Graph.HGraph
 import Data.Tagged (Tagged(..), retag)
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import GHC.TypeLits
+import Test.QuickCheck.Arbitrary
 
 import Data.Graph.HGraph.Internal as X
 
@@ -30,7 +32,7 @@ infixr 5 `PointsAt`
 class a `PointsAt` b where
   infixr 5 `pointsAt`
   pointsAt :: a -> b -> a
-  default pointsAt :: (HasEot a, (Eot a) `GPointsAt` b) => a -> b -> a
+  default pointsAt :: (HasEot a, Eot a `GPointsAt` b) => a -> b -> a
   pointsAt a b = fromEot $ toEot a `gPointsAt` b
 
 class a `GPointsAt` b where
@@ -62,14 +64,12 @@ instance (Tagged '(i, j ': js) a `PointsAtR` HGraph c) => Tagged '(i, j ': js) a
   a `pointsAtR` Cons _ c = a `pointsAtR` c
 -- | Adjacent
 instance {-# OVERLAPPING #-}
-  (a `PointsAt` b, Tagged '(i, js) a `PointsAtR` (HGraph ('(b, j, ks) ': c))) =>
+  (Tagged '(i, j ': js) a `PointsAt` Tagged '(j, ks) b, Tagged '(i, js) a `PointsAtR` (HGraph ('(b, j, ks) ': c))) =>
   Tagged '(i, j ': js) a `PointsAtR` (HGraph ('(b, j, ks) ': c)) where
-  a `pointsAtR` Cons b c = retag $ a' `pointsAtR` r
+  a `pointsAtR` r@(Cons b _) = retag $ a' `pointsAtR` r
     where
-      r :: HGraph ('(b, j, ks) ': c)
-      r = Cons b c
       a' :: Tagged '(i, js) a
-      a' = retag $ (`pointsAt` unTagged b) <$> a
+      a' = retag $ a `pointsAt` b
 
 infixr 5 ~>
 (~>) :: ((Tagged '(i, is) a) `PointsAtR` HGraph b) => a -> HGraph b -> HGraph ('(a, i, is) ': b)
@@ -130,3 +130,27 @@ instance
   ) =>
   TreeConv (HGraph ('(a, n, '[m]) ': '(b, m, x) ': y)) (a :< j) where
   tree (a :<: b) = a :< tree b
+
+
+-- @RawGraph@ is required because, without it, we have to provide no-op @PointsAt@ instances for
+-- building the @Arbitrary@ graph we hand to @insertGraph@. i.e.
+-- @instance (a `PointsAt` Entity b) => a `PointsAt` b where a `pointsAt` _ = a@
+-- But then any graphs missing an instance match this instance and fail via a context reduction stack overflow
+-- which is pretty ugly.
+data RawGraph a = RawGraph { unRawGraph :: HGraph a }
+
+instance Arbitrary (RawGraph '[]) where
+  arbitrary = pure $ RawGraph Nil
+instance (Arbitrary (Tagged '(i, is) a), Arbitrary (RawGraph b)) => Arbitrary (RawGraph ('(a, i, is) ': b)) where
+  arbitrary = do
+    RawGraph <$> (Cons <$> arbitrary <*> (unRawGraph <$> arbitrary))
+
+instance Arbitrary (HGraph '[]) where
+  arbitrary = pure Nil
+instance
+  (Tagged '(i, is) a `PointsAtR` HGraph b, Arbitrary (Tagged '(i, is) a), Arbitrary (HGraph b)) =>
+  Arbitrary (HGraph ('(a, i, is) ': b)) where
+  arbitrary = do
+    b <- arbitrary
+    a <- arbitrary
+    pure $ (a `pointsAtR` b) `Cons` b
