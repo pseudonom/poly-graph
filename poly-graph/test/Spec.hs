@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 import Test.Hspec
 
@@ -29,6 +30,17 @@ data Node2 (self :: Typ) (other1 :: Typ) (other2 :: Typ)
   , pointer1 :: Maybe (Tagged other1 Int)
   , pointer2 :: Maybe (Tagged other2 Int)
   } deriving (Show, Eq, Generic)
+
+instance
+  {-# OVERLAPPABLE #-}
+  (b `GPointsAt` c) =>
+  (a, b) `GPointsAt` c where
+  (a, b) `gPointsAt` c = (a, b `gPointsAt` c)
+instance
+  {-# OVERLAPPABLE #-}
+  (GNullify b) =>
+  GNullify (a, b) where
+  gNullify (a, b) = (a, gNullify b)
 
 main :: IO ()
 main = hspec $ do

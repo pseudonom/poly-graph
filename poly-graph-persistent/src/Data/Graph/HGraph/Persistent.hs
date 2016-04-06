@@ -22,7 +22,6 @@ import Data.Functor.Identity
 import Data.Proxy
 import Database.Persist
 import Database.Persist.Sql
-import Debug.Trace
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import GHC.TypeLits
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
@@ -52,6 +51,11 @@ instance
   (b `GPointsAt` (Entity a)) =>
   (Maybe (Key a), b) `GPointsAt` (Entity a) where
   (_, b) `gPointsAt` e@(Entity k _) = (Just k, b `gPointsAt` e)
+instance
+  {-# OVERLAPPABLE #-}
+  (b `GPointsAt` c) =>
+  (a, b) `GPointsAt` c where
+  (a, b) `gPointsAt` c = (a, b `gPointsAt` c)
 
 type family TypeError (msg :: Symbol) (a :: k) :: j
 
@@ -59,12 +63,17 @@ instance
   {-# OVERLAPPING #-}
   (GNullify b) =>
   GNullify (Maybe (Key a), b) where
-  gNullify (_, b) = trace "nulling" (Nothing, gNullify b)
+  gNullify (_, b) = (Nothing, gNullify b)
 instance
   {-# OVERLAPPING #-}
   (GNullify b, TypeError "Missing pointer to" a) =>
   GNullify (Key a, b) where
   gNullify _ = error "Dangling key"
+instance
+  {-# OVERLAPPABLE #-}
+  (GNullify b) =>
+  GNullify (a, b) where
+  gNullify (a, b) = (a, gNullify b)
 
 instance {-# OVERLAPPING #-} (a `PointsAt` b) => Entity a `PointsAt` b where
   Entity i a `pointsAt` b = Entity i $ a `pointsAt` b
