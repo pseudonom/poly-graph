@@ -11,6 +11,7 @@ import Test.Hspec
 import Data.Tagged (Tagged(..))
 
 import Data.Graph.HGraph
+import Data.Graph.HGraph.Instances
 import Data.Graph.HGraph.Internal (HGraph(Cons))
 
 data Node
@@ -43,7 +44,29 @@ data NodeC
 
 
 main :: IO ()
-main = hspec $
+main = hspec $ do
+  let -- Make sure we support all combinations
+      node = Node 1 (Just 1)
+      plainToPlain = node `pointsAt` node
+      plainToMaybe = node `pointsAt` Just node
+      plainToAlways = node `pointsAt` Always node
+      plainToNever = node `pointsAt` (Never :: Never Node)
+
+      maybeToPlain = Just node `pointsAt` node
+      maybeToMaybe = Just node `pointsAt` Just node
+      maybeToAlways = Just node `pointsAt` Always node
+      maybeToNever = Just node `pointsAt` (Never :: Never Node)
+
+      alwaysToPlain = Always node `pointsAt` node
+      alwaysToMaybe = Always node `pointsAt` Just node
+      alwaysToAlways = Always node `pointsAt` Always node
+      alwaysToNever = Always node `pointsAt` (Never :: Never Node)
+
+      neverToPlain = (Never :: Never Node) `pointsAt` node
+      neverToMaybe = (Never :: Never Node) `pointsAt` Just node
+      neverToAlways = (Never :: Never Node) `pointsAt` Always node
+      neverToNever = (Never :: Never Node) `pointsAt` (Never :: Never Node)
+
   describe "~>" $ do
     it "works for simple chains" $
       simpleChain `shouldBe` simpleChain'
@@ -131,16 +154,16 @@ deconstruct =
   case tree fanOut of
     c1 :< (a, b :< c2) -> (c1, a, b, c2)
 
--- -- | Graph looks like
--- -- @
--- --  C>-------+
--- --           |
--- --           V
--- --           B>------>C
--- --           ^
--- --           |
--- --  A>-------+
--- -- @
+-- | Graph looks like
+-- @
+--  C>-------+
+--           |
+--           V
+--           B>------>C
+--           ^
+--           |
+--  A>-------+
+-- @
 
 fanIn ::
   HGraph
