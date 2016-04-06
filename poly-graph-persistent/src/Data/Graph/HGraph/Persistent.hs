@@ -17,6 +17,7 @@ module Data.Graph.HGraph.Persistent where
 
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.IO.Class (MonadIO)
+import Data.Foldable (traverse_)
 import Data.Functor.Identity
 import Data.Proxy
 import Data.Tagged
@@ -31,112 +32,101 @@ type Always = Identity
 pattern Always a = Identity a
 pattern Never = Proxy
 
-class InsertEntityGraph a where
-  type InsertEntityGraphBackend a
-  insertEntityGraph
-    :: (Monad m, MonadIO m, PersistStore backend, BaseBackend backend ~ InsertEntityGraphBackend a)
-    => a -> ReaderT backend m ()
-
-instance {-# OVERLAPPING #-}
-  (b `GPointsAt` Entity a)
-  => (Key a, b) `GPointsAt` Entity a where
-  (_, b) `gPointsAt` e@(Entity k _) = (k, b `gPointsAt` e)
-instance {-# OVERLAPPING #-}
-  (b `GPointsAt` Maybe (Entity a))
-  => (Maybe (Key a), b) `GPointsAt` Maybe (Entity a) where
-  (_, b) `gPointsAt` e@(Just (Entity k _)) = (Just k, b `gPointsAt` e)
-  (_, b) `gPointsAt` e@Nothing = (Nothing, b `gPointsAt` e)
-
--- Can't make `HGraph '[]` the base case
--- because then we don't know which type of backend to use
-instance (InsertEntityGraph a) => InsertEntityGraph (HGraph '[ '(a, i, is)]) where
-  type InsertEntityGraphBackend (HGraph '[ '(a, i, is)]) = InsertEntityGraphBackend a
-  insertEntityGraph (a :<: Nil) = insertEntityGraph a
 instance
-  ( InsertEntityGraph a, InsertEntityGraph (HGraph (b ': c))
-  , InsertEntityGraphBackend a ~ InsertEntityGraphBackend (HGraph (b ': c))
-  ) => InsertEntityGraph (HGraph ('(a, i, is) ': b ': c)) where
-  type InsertEntityGraphBackend (HGraph ('(a, i, is) ': b ': c)) = InsertEntityGraphBackend a
-  insertEntityGraph (a :<: b) = insertEntityGraph b >> insertEntityGraph a
+  {-# OVERLAPPING #-}
+  (b `GPointsAt` (Entity a)) =>
+  (Key a, b) `GPointsAt` (Entity a) where
+  (_, b) `gPointsAt` e@(Entity k _) = (k, b `gPointsAt` e)
+instance
+  {-# OVERLAPPING #-}
+  (b `GPointsAt` (Maybe (Entity a))) =>
+  (Maybe (Key a), b) `GPointsAt` (Maybe (Entity a)) where
+  (_, b) `gPointsAt` e@(Just (Entity k _)) = (Just k, b `gPointsAt` e)
+  (_, b) `gPointsAt` e@(Nothing) = (Nothing, b `gPointsAt` e)
+instance
+  {-# OVERLAPPING #-}
+  (b `GPointsAt` (Entity a)) =>
+  (Maybe (Key a), b) `GPointsAt` (Entity a) where
+  (_, b) `gPointsAt` e@(Entity k _) = (Just k, b `gPointsAt` e)
 
-instance InsertEntityGraph (Entity a) where
-  type InsertEntityGraphBackend (Entity a) = PersistEntityBackend a
-  insertEntityGraph (Entity key val) = insertKey key val
 
-instance InsertEntityGraph (Never (a :: *)) where
-  type InsertEntityGraphBackend (Never a) = InsertEntityGraphBackend a
-  insertEntityGraph Never = return ()
-instance (InsertEntityGraph a) => InsertEntityGraph (Always a) where
-  type InsertEntityGraphBackend (Always a) = InsertEntityGraphBackend a
-  insertEntityGraph (Always a) = insertEntityGraph a
-instance (InsertEntityGraph a) => InsertEntityGraph (Maybe a) where
-  type InsertEntityGraphBackend (Maybe a) = InsertEntityGraphBackend a
-  insertEntityGraph (Just a) = insertEntityGraph a
-  insertEntityGraph Nothing = return ()
+class InsertEntityGraph a backend | a -> backend where
+  insertEntityGraph ::
+    (Monad m, MonadIO m, PersistStore backend) =>
+    HGraph a -> ReaderT backend m ()
+
+-- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
+instance
+  (InsertEntityElement a backend) =>
+  InsertEntityGraph '[ '(a, i, is)] backend where
+  insertEntityGraph (a `Cons` Nil) = insertEntityElement a
+-- | HGraph recursive case
+instance
+  (InsertEntityElement a backend, InsertEntityGraph (b ': c) backend) =>
+  InsertEntityGraph ('(a, i, is) ': b ': c) backend where
+  insertEntityGraph (a `Cons` b) = insertEntityGraph b >> insertEntityElement a
+
+
+class InsertEntityElement a backend | a -> backend where
+  insertEntityElement ::
+    (Monad m, MonadIO m, PersistStore backend) =>
+    Tagged t a -> ReaderT backend m ()
+
+instance
+  (BaseBackend backend ~ PersistEntityBackend a) =>
+  InsertEntityElement (Entity a) backend where
+  insertEntityElement (Tagged (Entity key val)) = insertKey key val
+instance
+  (BaseBackend backend ~ PersistEntityBackend a, Traversable f) =>
+  InsertEntityElement (f (Entity a)) backend where
+  insertEntityElement (Tagged fe) = traverse_ (\(Entity key val) -> insertKey key val) fe
+
 
 type family Unwrap a where
   Unwrap (Entity a) = a
-  Unwrap (Never (Entity a)) = Never a
-  Unwrap (Always (Entity a)) = Always a
-  Unwrap (Maybe (Entity a)) = Maybe a
+  Unwrap (f (Entity a)) = f a
 type family UnwrapAll a where
   UnwrapAll ('(a, i, is) ': as) = '(Unwrap a, i, is) ': UnwrapAll as
   UnwrapAll '[] = '[]
 
-class InsertGraph a b backend | b -> a, a -> backend , b -> backend where
-  insertGraph :: (Monad m, MonadIO m, PersistStore backend) => a -> ReaderT backend m b
 
+class InsertGraph a b backend | a -> b, b -> a, a -> backend , b -> backend where
+  insertGraph ::
+    (Monad m, MonadIO m, PersistStore backend, UnwrapAll b ~ a) =>
+    HGraph a -> ReaderT backend m (HGraph b)
+
+-- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
+instance
+  (InsertElement a b backend) =>
+  InsertGraph '[ '(a, i, is)] '[ '(b, i, is)] backend where
+  insertGraph (a `Cons` Nil) = do
+    e <- insertElement a
+    pure $ e `Cons` Nil
+-- | HGraph recursive case
 instance
   ( Tagged '(i, is) a `PointsAtR` HGraph (e ': f)
-  , InsertGraph (HGraph (b ': c)) (HGraph (e ': f)) backend
-  , InsertGraph a d backend
-  , (b ': c) ~ UnwrapAll (e ': f)
-  , a ~ Unwrap d
-  )
-  => InsertGraph (HGraph ('(a, i, is) ': b ': c)) (HGraph ('(d, i, is) ': e ': f)) backend where
+  , InsertGraph (b ': c) (e ': f) backend
+  , InsertElement a d backend
+  ) =>
+  InsertGraph ('(a, i, is) ': b ': c) ('(d, i, is) ': e ': f) backend where
   insertGraph (a `Cons` b) = do
     b' <- insertGraph b
-    let a' = unTagged $ a `pointsAtR` b'
-    a'' <- insertGraph a'
+    let a' = a `pointsAtR` b'
+    a'' <- insertElement a'
     pure $ a'' `Cons` b'
+
+
+class InsertElement a b backend | a -> b, b -> a, a -> backend, b -> backend where
+  insertElement ::
+    (Monad m, MonadIO m, PersistStore backend, Unwrap b ~ a) =>
+    Tagged t a -> ReaderT backend m (Tagged u b)
 instance
-  ( a ~ Unwrap b
-  , InsertGraph a b backend
-  )
-  => InsertGraph (HGraph '[ '(a, i, is)]) (HGraph '[ '(b, i, is)]) backend where
-  insertGraph (a :<: Nil) = do
-    e <- insertGraph a
-    pure $ e `Cons` Nil
-
+  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a) =>
+  InsertElement a (Entity a) backend where
+  insertElement (Tagged a) = Tagged . flip Entity a <$> insert a
 instance
-  ( a ~ Unwrap b
-  , InsertGraph a b backend
-  ) => InsertGraph a (Tagged '(i, is) b) backend where
-  insertGraph a = Tagged <$> insertGraph a
-
-instance ( PersistEntityBackend a ~ BaseBackend backend, PersistEntity a
-         ) => InsertGraph a (Entity a) backend where
-  insertGraph a = flip Entity a <$> insert a
--- The constraint here isn't strictly necessary but it allows us to add the `a -> backend` and `b -> backend` fundeps
-instance (PersistEntityBackend a ~ backend) => InsertGraph (Never a) (Never (Entity a)) backend where
-  insertGraph Never = pure Never
-instance (InsertGraph a (Entity a) backend) => InsertGraph (Always a) (Always (Entity a)) backend where
-  insertGraph (Always a) = Always <$> insertGraph a
-instance (InsertGraph a (Entity a) backend) => InsertGraph (Maybe a) (Maybe (Entity a)) backend where
-  insertGraph (Just a) = Just <$> insertGraph a
-  insertGraph Nothing = pure Nothing
-
-instance {-# OVERLAPPABLE #-} (a `PointsAt` b) => Entity a `PointsAt` b where
-  Entity id' a `pointsAt` b = Entity id' $ a `pointsAt` b
-instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => Entity a `PointsAt` Maybe b where
-  Entity id' a `pointsAt` b = Entity id' $ a `pointsAt` b
-instance {-# OVERLAPPING #-} (a `PointsAt` Always b) => Entity a `PointsAt` Always b where
-  Entity id' a `pointsAt` b = Entity id' $ a `pointsAt` b
-instance {-# OVERLAPPING #-} (a `PointsAt` Never b) => Entity a `PointsAt` Never b where
-  Entity id' a `pointsAt` b = Entity id' $ a `pointsAt` b
-
--- | No-op instances for use with `insertGraph`
-instance {-# OVERLAPPABLE #-} (Entity a `PointsAt` Entity b) => a `PointsAt` b where
-  a `pointsAt` _ = a
-instance {-# OVERLAPPABLE #-} (a `PointsAt` Maybe (Entity b)) => a `PointsAt` Maybe b where
-  a `pointsAt` _ = a
+  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, Traversable f, Applicative f) =>
+  InsertElement (f a) (f (Entity a)) backend where
+  insertElement (Tagged fa) = do
+    fid <- traverse insert fa
+    pure $ Tagged (Entity <$> fid <*> fa)
