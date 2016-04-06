@@ -39,7 +39,7 @@ instance {-# OVERLAPPABLE #-} (Functor f, a `PointsAt` b) => f a `PointsAt` b wh
 instance {-# OVERLAPPING #-} (Functor f, a `PointsAt` Maybe b) => f a `PointsAt` Always b where
   fa `pointsAt` Always b = (`pointsAt` (Just b :: Maybe b)) <$> fa
 instance {-# OVERLAPPING #-} (Functor f, a `PointsAt` Maybe b) => f a `PointsAt` Never b where
-  fa `pointsAt` Never = (`pointsAt` (Nothing :: (Maybe b))) <$> fa
+  fa `pointsAt` Never = (`pointsAt` (Nothing :: Maybe b)) <$> fa
 instance {-# OVERLAPPING #-} (Functor f, a `PointsAt` Maybe b) => f a `PointsAt` Maybe b where
   fa `pointsAt` b = (`pointsAt` b) <$> fa
 

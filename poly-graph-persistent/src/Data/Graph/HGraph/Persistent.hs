@@ -66,6 +66,16 @@ instance
   GNullify (Key a, b) where
   gNullify _ = error "Dangling key"
 
+instance {-# OVERLAPPING #-} (a `PointsAt` b) => Entity a `PointsAt` b where
+  Entity i a `pointsAt` b = Entity i $ a `pointsAt` b
+-- These 3 avoid are to avoid overlap ambiguity
+instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => Entity a `PointsAt` Always b where
+  Entity i a `pointsAt` Always b = Entity i a `pointsAt` (Just b :: Maybe b)
+instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => Entity a `PointsAt` Never b where
+  Entity i a `pointsAt` Never = Entity i $ a `pointsAt` (Nothing :: Maybe b)
+instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => Entity a `PointsAt` Maybe b where
+  Entity i a `pointsAt` b = Entity i $ a `pointsAt` b
+
 -- | End of graph
 instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i ('Right '[]) (Entity a) `PointsAtR` HGraph '[] where
   Node (Entity i a) `pointsAtR` _ = Node . Entity i . fromEot . gNullify $ toEot a

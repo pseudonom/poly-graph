@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -10,6 +11,7 @@
 import Test.Hspec
 
 import Data.Tagged
+import GHC.Generics
 
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances
@@ -20,13 +22,13 @@ data Node1 (self :: Typ) (other :: Typ)
   = Node1
   { ident1 :: Tagged self Int
   , pointer :: Maybe (Tagged other Int)
-  } deriving (Show, Eq)
+  } deriving (Show, Eq, Generic)
 data Node2 (self :: Typ) (other1 :: Typ) (other2 :: Typ)
   = Node2
   { ident2 :: Tagged self Int
   , pointer1 :: Maybe (Tagged other1 Int)
   , pointer2 :: Maybe (Tagged other2 Int)
-  } deriving (Show, Eq)
+  } deriving (Show, Eq, Generic)
 
 main :: IO ()
 main = hspec $ do

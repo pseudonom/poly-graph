@@ -119,6 +119,11 @@ main = do
       -- it "doesn't compile with a dangling (non-`Maybe`) key" $ db $ do
       --   graph <- liftIO (generate arbitrary) :: M (HGraph '[ '(Teacher, "Teacher", '[]) ])
       --   liftIO $ print graph
+      it "generates arbitrary entities" $ db $ do
+        graph <-
+          liftIO (generate arbitrary)
+            :: M (Tree (Entity Student :< Entity Teacher :< Entity School :< Always (Entity District)))
+        liftIO $ print graph
       it "defaults `Maybe` keys to nothing" $ db $ do
         graph <-
           liftIO (generate arbitrary)
