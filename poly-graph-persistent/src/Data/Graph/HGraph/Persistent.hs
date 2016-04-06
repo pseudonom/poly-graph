@@ -22,7 +22,9 @@ import Data.Functor.Identity
 import Data.Proxy
 import Database.Persist
 import Database.Persist.Sql
+import Debug.Trace
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
+import GHC.TypeLits
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
 import Data.Graph.HGraph
@@ -51,17 +53,24 @@ instance
   (Maybe (Key a), b) `GPointsAt` (Entity a) where
   (_, b) `gPointsAt` e@(Entity k _) = (Just k, b `gPointsAt` e)
 
+type family TypeError (msg :: Symbol) (a :: k) :: j
+
 instance
   {-# OVERLAPPING #-}
   (GNullify b) =>
   GNullify (Maybe (Key a), b) where
-  gNullify (_, b) = (Nothing, gNullify b)
+  gNullify (_, b) = trace "nulling" (Nothing, gNullify b)
+instance
+  {-# OVERLAPPING #-}
+  (GNullify b, TypeError "Missing pointer to" a) =>
+  GNullify (Key a, b) where
+  gNullify _ = error "Dangling key"
 
 -- | End of graph
-instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i '[] (Entity a) `PointsAtR` HGraph '[] where
+instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i ('Right '[]) (Entity a) `PointsAtR` HGraph '[] where
   Node (Entity i a) `pointsAtR` _ = Node . Entity i . fromEot . gNullify $ toEot a
 -- | Points at nothing
-instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i '[] (Entity a) `PointsAtR` (HGraph b) where
+instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i ('Right '[]) (Entity a) `PointsAtR` (HGraph b) where
   Node (Entity i a) `pointsAtR` _ = Node . Entity i . fromEot . gNullify $ toEot a
 
 class InsertEntityGraph a backend | a -> backend where
@@ -118,7 +127,7 @@ instance
     pure $ e `Cons` Nil
 -- | HGraph recursive case
 instance
-  ( Node i is a `PointsAtR` HGraph (e ': f)
+  ( Node i ('Right is) a `PointsAtR` HGraph (e ': f)
   , InsertGraph (b ': c) (e ': f) backend
   , InsertElement a d backend
   ) =>
