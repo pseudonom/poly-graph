@@ -27,6 +27,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT, MonadBaseControl)
 import qualified Data.ByteString.Char8 as B8
+import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
 import Data.Type.Equality (type (==))
 import Database.Persist
@@ -103,6 +104,18 @@ main = do
   runConn $ runMigrationUnsafe testMigrate
   hspec $
     describe "poly-graph-persistent" $ do
+      it "works with plucked lenses" $ db $ do
+        graph <-
+          unRawGraph <$> liftIO (generate arbitrary)
+            :: M (
+                 HGraph
+                  '[ '(Student, "Student", '["Teacher"])
+                   , '(Teacher, "Teacher", '["School"])
+                   , '(School, "School", '[])
+                   ]
+                 )
+        let graph' = graph & pluck (Proxy :: Proxy "School") . schoolName .~ "Hello"
+        liftIO $ print graph'
       it "allows defaults maybe keys to nothing" $ db $ do
         graph <-
           liftIO (generate arbitrary)

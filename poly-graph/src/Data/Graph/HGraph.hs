@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -23,6 +24,7 @@ module Data.Graph.HGraph
   , X.retag
   ) where
 
+import Data.Proxy
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import GHC.TypeLits
 import Test.QuickCheck.Arbitrary
@@ -171,3 +173,10 @@ instance
     b <- arbitrary
     a <- arbitrary
     pure $ (a `pointsAtR` b) `Cons` b
+
+class Pluck name a b | name a -> b where
+  pluck :: Proxy name -> Lens' (HGraph a) b
+instance {-# OVERLAPPING #-} Pluck name ('(b, name, is) ': c) b where
+  pluck Proxy = _head
+instance (Pluck name d b) => Pluck name ('(c, otherName, is) ': d) b where
+  pluck p = _tail . pluck p
