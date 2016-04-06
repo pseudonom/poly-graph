@@ -20,8 +20,9 @@ import Control.Monad.IO.Class (MonadIO)
 import Data.Foldable (traverse_)
 import Data.Functor.Identity
 import Data.Proxy
-import Data.Tagged
 import Database.Persist
+import Database.Persist.Sql
+import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Internal
@@ -70,16 +71,16 @@ instance
 class InsertEntityElement a backend | a -> backend where
   insertEntityElement ::
     (Monad m, MonadIO m, PersistStore backend) =>
-    Tagged t a -> ReaderT backend m ()
+    Node i is a -> ReaderT backend m ()
 
 instance
   (BaseBackend backend ~ PersistEntityBackend a) =>
   InsertEntityElement (Entity a) backend where
-  insertEntityElement (Tagged (Entity key val)) = insertKey key val
+  insertEntityElement (Node (Entity key val)) = insertKey key val
 instance
   (BaseBackend backend ~ PersistEntityBackend a, Traversable f) =>
   InsertEntityElement (f (Entity a)) backend where
-  insertEntityElement (Tagged fe) = traverse_ (\(Entity key val) -> insertKey key val) fe
+  insertEntityElement (Node fe) = traverse_ (\(Entity key val) -> insertKey key val) fe
 
 
 type family Unwrap a where
@@ -104,7 +105,7 @@ instance
     pure $ e `Cons` Nil
 -- | HGraph recursive case
 instance
-  ( Tagged '(i, is) a `PointsAtR` HGraph (e ': f)
+  ( Node i is a `PointsAtR` HGraph (e ': f)
   , InsertGraph (b ': c) (e ': f) backend
   , InsertElement a d backend
   ) =>
@@ -119,14 +120,19 @@ instance
 class InsertElement a b backend | a -> b, b -> a, a -> backend, b -> backend where
   insertElement ::
     (Monad m, MonadIO m, PersistStore backend, Unwrap b ~ a) =>
-    Tagged t a -> ReaderT backend m (Tagged u b)
+    Node i is a -> ReaderT backend m (Node j js b)
 instance
   (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a) =>
   InsertElement a (Entity a) backend where
-  insertElement (Tagged a) = Tagged . flip Entity a <$> insert a
+  insertElement (Node a) = Node . flip Entity a <$> insert a
 instance
   (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, Traversable f, Applicative f) =>
   InsertElement (f a) (f (Entity a)) backend where
-  insertElement (Tagged fa) = do
+  insertElement (Node fa) = do
     fid <- traverse insert fa
-    pure $ Tagged (Entity <$> fid <*> fa)
+    pure $ Node (Entity <$> fid <*> fa)
+
+instance (ToBackendKey SqlBackend a) => Arbitrary (Key a) where
+  arbitrary = toSqlKey <$> arbitrary
+instance (PersistEntity a, Arbitrary (Key a), Arbitrary a) => Arbitrary (Entity a) where
+  arbitrary = Entity <$> arbitrary <*> arbitrary

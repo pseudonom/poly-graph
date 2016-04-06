@@ -8,14 +8,12 @@
 
 import Test.Hspec
 
-import Data.Tagged (Tagged(..))
-
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances
 import Data.Graph.HGraph.Internal (HGraph(Cons))
 
-data Node
-  = Node
+data SelfNode
+  = SelfNode
   { id' :: Int
   , pointer :: Maybe Int
   } deriving (Show, Eq)
@@ -46,26 +44,26 @@ data NodeC
 main :: IO ()
 main = hspec $ do
   let -- Make sure we support all combinations
-      node = Node 1 (Just 1)
+      node = SelfNode 1 (Just 1)
       plainToPlain = node `pointsAt` node
       plainToMaybe = node `pointsAt` Just node
       plainToAlways = node `pointsAt` Always node
-      plainToNever = node `pointsAt` (Never :: Never Node)
+      plainToNever = node `pointsAt` (Never :: Never SelfNode)
 
       maybeToPlain = Just node `pointsAt` node
       maybeToMaybe = Just node `pointsAt` Just node
       maybeToAlways = Just node `pointsAt` Always node
-      maybeToNever = Just node `pointsAt` (Never :: Never Node)
+      maybeToNever = Just node `pointsAt` (Never :: Never SelfNode)
 
       alwaysToPlain = Always node `pointsAt` node
       alwaysToMaybe = Always node `pointsAt` Just node
       alwaysToAlways = Always node `pointsAt` Always node
-      alwaysToNever = Always node `pointsAt` (Never :: Never Node)
+      alwaysToNever = Always node `pointsAt` (Never :: Never SelfNode)
 
-      neverToPlain = (Never :: Never Node) `pointsAt` node
-      neverToMaybe = (Never :: Never Node) `pointsAt` Just node
-      neverToAlways = (Never :: Never Node) `pointsAt` Always node
-      neverToNever = (Never :: Never Node) `pointsAt` (Never :: Never Node)
+      neverToPlain = (Never :: Never SelfNode) `pointsAt` node
+      neverToMaybe = (Never :: Never SelfNode) `pointsAt` Just node
+      neverToAlways = (Never :: Never SelfNode) `pointsAt` Always node
+      neverToNever = (Never :: Never SelfNode) `pointsAt` (Never :: Never SelfNode)
 
   describe "~>" $ do
     it "works for simple chains" $
@@ -77,8 +75,8 @@ main = hspec $ do
     it "works for a complicated mess" $
       inAndOut `shouldBe` inAndOut'
 
-instance Node `PointsAt` Node where
-  (Node id1 _) `pointsAt` (Node id2 _) = Node id1 (Just id2)
+instance SelfNode `PointsAt` SelfNode where
+  (SelfNode id1 _) `pointsAt` (SelfNode id2 _) = SelfNode id1 (Just id2)
 instance NodeA `PointsAt` NodeB where
   (NodeA ida _) `pointsAt` (NodeB idb _) = NodeA ida (Just idb)
 instance NodeB `PointsAt` NodeC where
@@ -107,9 +105,9 @@ simpleChain' ::
   , '(NodeC, 2, '[])
   ]
 simpleChain' =
-  Tagged (NodeA 1 (Just 2)) `Cons`
-    Tagged (NodeB 2 (Just 3)) `Cons`
-      Tagged (NodeC 3 Nothing Nothing) `Cons`
+  Node (NodeA 1 (Just 2)) `Cons`
+    Node (NodeB 2 (Just 3)) `Cons`
+      Node (NodeC 3 Nothing Nothing) `Cons`
         Nil
 
 -- | Graph looks like
@@ -143,10 +141,10 @@ fanOut' ::
   , '(NodeC, 201, '[])
   ]
 fanOut' =
-  Tagged (NodeC 1 (Just 2) (Just 3)) `Cons`
-    Tagged (NodeA 2 Nothing) `Cons`
-    Tagged (NodeB 3 (Just 4)) `Cons`
-      Tagged (NodeC 4 Nothing Nothing) `Cons` Nil
+  Node (NodeC 1 (Just 2) (Just 3)) `Cons`
+    Node (NodeA 2 Nothing) `Cons`
+    Node (NodeB 3 (Just 4)) `Cons`
+      Node (NodeC 4 Nothing Nothing) `Cons` Nil
 
 -- | Our "read-only" patterns work as expected
 deconstruct :: (NodeC, NodeA, NodeB, NodeC)
@@ -186,10 +184,10 @@ fanIn' ::
   , '(NodeC, "secondC", '[])
   ]
 fanIn' =
-  Tagged (NodeC 1 Nothing (Just 3)) `Cons`
-  Tagged (NodeA 2 (Just 3)) `Cons`
-  Tagged (NodeB 3 (Just 4)) `Cons`
-  Tagged (NodeC 4 Nothing Nothing) `Cons` Nil
+  Node (NodeC 1 Nothing (Just 3)) `Cons`
+  Node (NodeA 2 (Just 3)) `Cons`
+  Node (NodeB 3 (Just 4)) `Cons`
+  Node (NodeC 4 Nothing Nothing) `Cons` Nil
 
 -- | Graph looks like
 -- @
@@ -207,40 +205,40 @@ fanIn' =
 -- @
 inAndOut ::
   HGraph
-  [ '(Node, 1, '[7])
-  , '(Node, 2, '[3, 5, 6])
-  , '(Node, 3, '[4])
-  , '(Node, 4, '[7])
-  , '(Node, 5, '[7])
-  , '(Node, 6, '[])
-  , '(Node, 7, '[])
+  [ '(SelfNode, 1, '[7])
+  , '(SelfNode, 2, '[3, 5, 6])
+  , '(SelfNode, 3, '[4])
+  , '(SelfNode, 4, '[7])
+  , '(SelfNode, 5, '[7])
+  , '(SelfNode, 6, '[])
+  , '(SelfNode, 7, '[])
   ]
 inAndOut =
-  Node 1 Nothing ~>
-  Node 2 Nothing ~>
-  Node 3 Nothing ~>
-  Node 4 Nothing ~>
-  Node 5 Nothing ~>
-  Node 6 Nothing ~>
-  Node 7 Nothing ~>
+  SelfNode 1 Nothing ~>
+  SelfNode 2 Nothing ~>
+  SelfNode 3 Nothing ~>
+  SelfNode 4 Nothing ~>
+  SelfNode 5 Nothing ~>
+  SelfNode 6 Nothing ~>
+  SelfNode 7 Nothing ~>
   Nil
 
 inAndOut' ::
   HGraph
-  [ '(Node, 1, '[7])
-  , '(Node, 2, '[3, 5, 6])
-  , '(Node, 3, '[4])
-  , '(Node, 4, '[7])
-  , '(Node, 5, '[7])
-  , '(Node, 6, '[])
-  , '(Node, 7, '[])
+  [ '(SelfNode, 1, '[7])
+  , '(SelfNode, 2, '[3, 5, 6])
+  , '(SelfNode, 3, '[4])
+  , '(SelfNode, 4, '[7])
+  , '(SelfNode, 5, '[7])
+  , '(SelfNode, 6, '[])
+  , '(SelfNode, 7, '[])
   ]
 inAndOut' =
-  Tagged (Node 1 (Just 7)) `Cons`
-  Tagged (Node 2 (Just 6)) `Cons`
-  Tagged (Node 3 (Just 4)) `Cons`
-  Tagged (Node 4 (Just 7)) `Cons`
-  Tagged (Node 5 (Just 7)) `Cons`
-  Tagged (Node 6 Nothing) `Cons`
-  Tagged (Node 7 Nothing) `Cons`
+  Node (SelfNode 1 (Just 7)) `Cons`
+  Node (SelfNode 2 (Just 6)) `Cons`
+  Node (SelfNode 3 (Just 4)) `Cons`
+  Node (SelfNode 4 (Just 7)) `Cons`
+  Node (SelfNode 5 (Just 7)) `Cons`
+  Node (SelfNode 6 Nothing) `Cons`
+  Node (SelfNode 7 Nothing) `Cons`
   Nil

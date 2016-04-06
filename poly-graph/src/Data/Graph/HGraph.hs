@@ -19,9 +19,10 @@ module Data.Graph.HGraph
   , X.HGraph(Nil)
   , X._head
   , X._tail
+  , X.Node(..)
+  , X.retag
   ) where
 
-import Data.Tagged (Tagged(..), retag)
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import GHC.TypeLits
 import Test.QuickCheck.Arbitrary
@@ -48,32 +49,34 @@ instance GPointsAt () a where
 instance GPointsAt Void a where
   gPointsAt _ _ = error "impossible"
 
+-- "Read-only" pattern allows convenient destructuring while encouraging preservation
+-- linkage invariant
 infixr 5 :<:
-pattern a :<: b <- Tagged a `Cons` b
+pattern a :<: b <- Node a `Cons` b
 
 class a `PointsAtR` b where
   pointsAtR :: a -> b -> a
 -- | End of graph
-instance {-# OVERLAPPING #-} Tagged '(i, '[]) a `PointsAtR` HGraph '[] where
+instance {-# OVERLAPPING #-} Node i '[] a `PointsAtR` HGraph '[] where
   pointsAtR = const
 -- | Points at nothing
-instance Tagged '(i, '[]) a `PointsAtR` (HGraph b) where
+instance Node i '[] a `PointsAtR` (HGraph b) where
   pointsAtR = const
 -- | Points at wrong thing
-instance (Tagged '(i, j ': js) a `PointsAtR` HGraph c) => Tagged '(i, j ': js) a `PointsAtR` (HGraph ('(b, k, ls) ': c)) where
+instance (Node i (j ': js) a `PointsAtR` HGraph c) => Node i (j ': js) a `PointsAtR` (HGraph ('(b, k, ls) ': c)) where
   a `pointsAtR` Cons _ c = a `pointsAtR` c
 -- | Adjacent
 instance {-# OVERLAPPING #-}
-  (Tagged '(i, j ': js) a `PointsAt` Tagged '(j, ks) b, Tagged '(i, js) a `PointsAtR` (HGraph ('(b, j, ks) ': c))) =>
-  Tagged '(i, j ': js) a `PointsAtR` (HGraph ('(b, j, ks) ': c)) where
+  (Node i (j ': js) a `PointsAt` Node j ks b, Node i js a `PointsAtR` (HGraph ('(b, j, ks) ': c))) =>
+  Node i (j ': js) a `PointsAtR` (HGraph ('(b, j, ks) ': c)) where
   a `pointsAtR` r@(Cons b _) = retag $ a' `pointsAtR` r
     where
-      a' :: Tagged '(i, js) a
+      a' :: Node i js a
       a' = retag $ a `pointsAt` b
 
 infixr 5 ~>
-(~>) :: ((Tagged '(i, is) a) `PointsAtR` HGraph b) => a -> HGraph b -> HGraph ('(a, i, is) ': b)
-a ~> b = (Tagged a `pointsAtR` b) `Cons` b
+(~>) :: (Node i is a `PointsAtR` HGraph b) => a -> HGraph b -> HGraph ('(a, i, is) ': b)
+a ~> b = (Node a `pointsAtR` b) `Cons` b
 
 infixr 5 :<
 data a :< b = a :< b
@@ -141,14 +144,14 @@ data RawGraph a = RawGraph { unRawGraph :: HGraph a }
 
 instance Arbitrary (RawGraph '[]) where
   arbitrary = pure $ RawGraph Nil
-instance (Arbitrary (Tagged '(i, is) a), Arbitrary (RawGraph b)) => Arbitrary (RawGraph ('(a, i, is) ': b)) where
+instance (Arbitrary (Node i is a), Arbitrary (RawGraph b)) => Arbitrary (RawGraph ('(a, i, is) ': b)) where
   arbitrary = do
     RawGraph <$> (Cons <$> arbitrary <*> (unRawGraph <$> arbitrary))
 
 instance Arbitrary (HGraph '[]) where
   arbitrary = pure Nil
 instance
-  (Tagged '(i, is) a `PointsAtR` HGraph b, Arbitrary (Tagged '(i, is) a), Arbitrary (HGraph b)) =>
+  (Node i is a `PointsAtR` HGraph b, Arbitrary (Node i is a), Arbitrary (HGraph b)) =>
   Arbitrary (HGraph ('(a, i, is) ': b)) where
   arbitrary = do
     b <- arbitrary

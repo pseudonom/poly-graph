@@ -27,7 +27,6 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT, MonadBaseControl)
 import qualified Data.ByteString.Char8 as B8
-import Data.Tagged (Tagged)
 import Data.Text (Text, pack)
 import Data.Type.Equality (type (==))
 import Database.Persist
@@ -52,19 +51,9 @@ runConn f =
   withSqlitePool "test/testdb.sqlite3" 1 $
   runSqlPool f
 
-instance (Arbitrary a) => Arbitrary (Tagged (b :: k) a) where
-  arbitrary = pure <$> arbitrary
-instance (Arbitrary a) => Arbitrary (Always a) where
-  arbitrary = pure <$> arbitrary
-instance Arbitrary (Never a) where
-  arbitrary = pure Never
 instance Arbitrary Text where
   arbitrary = pack . filter (not . isBadChar) <$> arbitrary
     where isBadChar x = x == '\NUL' || x == '\\' -- Make postgres vomit
-instance (ToBackendKey SqlBackend a) => Arbitrary (Key a) where
-  arbitrary = toSqlKey <$> arbitrary
-instance (ToBackendKey SqlBackend a, Arbitrary a) => Arbitrary (Entity a) where
-  arbitrary = Entity <$> arbitrary <*> arbitrary
 
 share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistUpperCase|
   SelfRef

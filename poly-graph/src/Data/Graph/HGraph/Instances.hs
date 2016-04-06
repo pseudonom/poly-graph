@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -15,6 +16,7 @@ module Data.Graph.HGraph.Instances where
 import Data.Functor.Identity
 import Data.Proxy
 import Data.Tagged
+import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
 import Data.Graph.HGraph
 
@@ -46,5 +48,12 @@ instance {-# OVERLAPPABLE #-} (a `PointsAt` b) => a `PointsAt` Maybe b where
   a `pointsAt` Nothing = a
 
 -- The underlying HGraph uses @Node@s. This instance translates @Node@s into something slightly friendlier.
-instance {-# OVERLAPPING #-} (a `PointsAt` b) => Tagged t a `PointsAt` Tagged u b where
-  Tagged a `pointsAt` Tagged b = Tagged $ a `pointsAt` b
+instance {-# OVERLAPPING #-} (a `PointsAt` b) => Node i (j ': is) a `PointsAt` Node j js b where
+  Node a `pointsAt` Node b = Node $ a `pointsAt` b
+
+instance (Arbitrary a) => Arbitrary (Node i is a) where
+  arbitrary = Node <$> arbitrary
+instance (Arbitrary a) => Arbitrary (Always a) where
+  arbitrary = pure <$> arbitrary
+instance Arbitrary (Never a) where
+  arbitrary = pure Never

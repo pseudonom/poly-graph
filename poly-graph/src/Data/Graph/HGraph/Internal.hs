@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -14,10 +16,16 @@ module Data.Graph.HGraph.Internal where
 
 import Data.Monoid ((<>))
 import Data.Tagged (Tagged(..))
+import GHC.Generics (Generic)
+
+data Node (i :: k) (is :: [k]) a = Node { unNode :: a } deriving (Eq, Show, Functor, Generic)
+
+retag :: Node i is a -> Node j js a
+retag (Node a) = Node a
 
 infixr 5 `Cons`
 data HGraph y where
-  Cons :: Tagged '((i :: k), (is :: [k])) a -> HGraph b -> HGraph ('(a, i, is) ': b)
+  Cons :: Node i is a -> HGraph b -> HGraph ('(a, i, is) ': b)
   Nil :: HGraph '[]
 
 instance (Show x, Show (HGraph xs)) => Show (HGraph ('(x, i, is) ': xs)) where
@@ -34,7 +42,7 @@ type Lens' s a = Lens s s a a
 
 -- | Please don't use these lenses to edit the FK fields
 _head :: Lens' (HGraph ('(a, i, is) ': b)) a
-_head pure' (Tagged a `Cons` b) = (`Cons` b)  . Tagged <$> pure' a
+_head pure' (Node a `Cons` b) = (`Cons` b)  . Node <$> pure' a
 
 -- | Please don't use these lenses to edit the FK fields
 _tail :: Lens' (HGraph (a ': b)) (HGraph b)
