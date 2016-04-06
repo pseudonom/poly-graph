@@ -6,7 +6,6 @@ resolver: lts-5.2
 # Local packages, usually specified by relative directory name
 packages:
 - 'poly-graph'
-- 'poly-graph-arbitrary'
 - 'poly-graph-persistent'
 - location:
     git: git@github.com:pseudonom/persistent

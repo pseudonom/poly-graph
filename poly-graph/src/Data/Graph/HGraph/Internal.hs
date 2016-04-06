@@ -13,8 +13,7 @@
 module Data.Graph.HGraph.Internal where
 
 import Data.Monoid ((<>))
-import Data.Tagged
-import Data.Typeable (Typeable)
+import Data.Tagged (Tagged(..))
 
 infixr 5 `Cons`
 data HGraph y where
@@ -29,7 +28,6 @@ instance (Eq x, Eq (HGraph xs)) => Eq (HGraph ('(x, i, is) ': xs)) where
   (Cons x1 xs1) == (Cons x2 xs2) = x1 == x2 && xs1 == xs2
 instance Eq (HGraph '[]) where
   Nil == Nil = True
-deriving instance Typeable (HGraph a)
 
 type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
 type Lens' s a = Lens s s a a

@@ -31,7 +31,6 @@ test-suite poly-graph-test
   build-depends:       base
                      , poly-graph
                      , poly-graph-persistent
-                     , poly-graph-arbitrary
                      , hspec
                      , persistent
                      , persistent-template
@@ -44,6 +43,7 @@ test-suite poly-graph-test
                      , text
                      , lens
                      , bytestring
+                     , tagged
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 
