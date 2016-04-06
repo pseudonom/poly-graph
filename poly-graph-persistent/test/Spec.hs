@@ -116,11 +116,14 @@ main = do
                  )
         let graph' = graph & pluck (Proxy :: Proxy "School") . schoolName .~ "Hello"
         liftIO $ print graph'
-      it "allows defaults maybe keys to nothing" $ db $ do
+      -- it "doesn't compile with a dangling (non-`Maybe`) key" $ db $ do
+      --   graph <- liftIO (generate arbitrary) :: M (HGraph '[ '(Teacher, "Teacher", '[]) ])
+      --   liftIO $ print graph
+      it "defaults `Maybe` keys to nothing" $ db $ do
         graph <-
           liftIO (generate arbitrary)
-            :: M (HGraph '[ '(Entity SelfRef, "Plain", '[]) ])
-        liftIO $ (view selfRefSelfRefId . entityVal . view _head $ graph) `shouldBe` Nothing
+            :: M (HGraph '[ '(SelfRef, "Plain", '[]) ])
+        liftIO $ (view selfRefSelfRefId . view _head $ graph) `shouldBe` Nothing
       it "works with Maybe key to plain" $ db $ do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
@@ -192,12 +195,19 @@ main = do
 
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
-            :: M (Tree (Student :< Teacher :< School :< Always District))
         (tree -> st :< te :< sc :< Always di) <-
           insertGraph graph
-            :: M (Tree (Entity Student :< Entity Teacher :< Entity School :< Always (Entity District)))
+            :: M (
+                 HGraph
+                   '[ '(Entity Student, "Student", '["Teacher"])
+                    , '(Entity Teacher, "Teacher", '["School"])
+                    , '(Entity School, "School", '["District"])
+                    , '(Always (Entity District), "District", '[])
+                    ]
+                 )
 
         let manualTree = (Entity stId stB, Entity teId teB, Entity scId scB, Entity diId diB)
         let autoTree = (st, te, sc, di)
         liftIO $ autoTree `shouldBe` manualTree
         liftIO $ print autoTree
+        liftIO $ print "foo"

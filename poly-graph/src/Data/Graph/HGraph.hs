@@ -25,6 +25,7 @@ module Data.Graph.HGraph
   ) where
 
 import Data.Proxy
+import Debug.Trace
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import GHC.TypeLits
 import Test.QuickCheck.Arbitrary
@@ -58,11 +59,11 @@ pattern a :<: b <- Node a `Cons` b
 
 class GNullify a where
   gNullify :: a -> a
-instance (GNullify b) => GNullify (a, b) where
-  gNullify (a, b) = (a, gNullify b)
-instance (GNullify a, GNullify b) => GNullify (Either a b) where
-  gNullify (Left a) = Left $ gNullify a
-  gNullify (Right b) = Right $ gNullify b
+instance (Show a, Show b, GNullify b) => GNullify (a, b) where
+  gNullify (a, b) = trace (show (a, b)) (a, gNullify b)
+instance (Show a, Show b, GNullify a, GNullify b) => GNullify (Either a b) where
+  gNullify l@(Left a) = trace (show l) $ Left $ gNullify a
+  gNullify r@(Right b) = trace (show r) $ Right $ gNullify b
 instance GNullify () where
   gNullify _ = ()
 instance GNullify Void where
@@ -71,27 +72,35 @@ instance GNullify Void where
 class a `PointsAtR` b where
   pointsAtR :: a -> b -> a
 
--- | End of graph
-instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i '[] a `PointsAtR` HGraph '[] where
+--- - | End of graph. Final node never pointed at anything. Default `Maybe`s to `Nothing`.
+instance {-# OVERLAPPING #-} (Show a, HasEot a, GNullify (Eot a)) => Node i ('Right '[]) a `PointsAtR` HGraph '[] where
   -- We use `GNullify` so we can default a `Maybe` key at the end of the graph to `Nothing`
-  a `pointsAtR` _ = fromEot . gNullify $ toEot a
--- | Points at nothing
-instance (HasEot a, GNullify (Eot a)) => Node i '[] a `PointsAtR` (HGraph b) where
-  a `pointsAtR` _ = fromEot . gNullify $ toEot a
+  Node a `pointsAtR` _ = trace ("eol" ++ show a) $ Node . fromEot . gNullify $ toEot a
+-- | End of graph. Final node used to point at things. Preserve the preceding nullification
+instance {-# OVERLAPPING #-} Node i ('Left '[]) a `PointsAtR` HGraph '[] where
+  pointsAtR = const
+-- | Points at nothing. Never pointed at anything. Default `Maybe`s to `Nothing`.
+instance (HasEot a, GNullify (Eot a), Show a) => Node i ('Right '[]) a `PointsAtR` (HGraph b) where
+  Node a `pointsAtR` _ = trace "no points" $ Node . fromEot . gNullify $ toEot a
+-- | Points at nothing. Used to point at something. Preserve prior linking.
+instance Node i ('Left '[]) a `PointsAtR` (HGraph b) where
+  pointsAtR = const
 -- | Points at wrong thing
-instance (Node i (j ': js) a `PointsAtR` HGraph c) => Node i (j ': js) a `PointsAtR` (HGraph ('(b, k, ls) ': c)) where
+instance (Node i (e (j ': js)) a `PointsAtR` HGraph c) => Node i (e (j ': js)) a `PointsAtR` (HGraph ('(b, k, ls) ': c)) where
   a `pointsAtR` Cons _ c = a `pointsAtR` c
 -- | Adjacent
 instance {-# OVERLAPPING #-}
-  (Node i (j ': js) a `PointsAt` Node j ks b, Node i js a `PointsAtR` (HGraph ('(b, j, ks) ': c))) =>
-  Node i (j ': js) a `PointsAtR` (HGraph ('(b, j, ks) ': c)) where
+  ( Node i (e (j ': js)) a `PointsAt` Node j ('Right ks) b
+  , Node i ('Left js) a `PointsAtR` (HGraph ('(b, j, ks) ': c))
+  ) =>
+  Node i (e (j ': js)) a `PointsAtR` (HGraph ('(b, j, ks) ': c)) where
   a `pointsAtR` r@(Cons b _) = retag $ a' `pointsAtR` r
     where
-      a' :: Node i js a
+      a' :: Node i ('Left js) a
       a' = retag $ a `pointsAt` b
 
 infixr 5 ~>
-(~>) :: (Node i is a `PointsAtR` HGraph b) => a -> HGraph b -> HGraph ('(a, i, is) ': b)
+(~>) :: (Node i ('Right is) a `PointsAtR` HGraph b) => a -> HGraph b -> HGraph ('(a, i, is) ': b)
 a ~> b = (Node a `pointsAtR` b) `Cons` b
 
 infixr 5 :<
@@ -160,14 +169,14 @@ data RawGraph a = RawGraph { unRawGraph :: HGraph a }
 
 instance Arbitrary (RawGraph '[]) where
   arbitrary = pure $ RawGraph Nil
-instance (Arbitrary (Node i is a), Arbitrary (RawGraph b)) => Arbitrary (RawGraph ('(a, i, is) ': b)) where
+instance (Arbitrary (Node i ('Right is) a), Arbitrary (RawGraph b)) => Arbitrary (RawGraph ('(a, i, is) ': b)) where
   arbitrary = do
     RawGraph <$> (Cons <$> arbitrary <*> (unRawGraph <$> arbitrary))
 
 instance Arbitrary (HGraph '[]) where
   arbitrary = pure Nil
 instance
-  (Node i is a `PointsAtR` HGraph b, Arbitrary (Node i is a), Arbitrary (HGraph b)) =>
+  (Node i ('Right is) a `PointsAtR` HGraph b, Arbitrary (Node i ('Right is) a), Arbitrary (HGraph b)) =>
   Arbitrary (HGraph ('(a, i, is) ': b)) where
   arbitrary = do
     b <- arbitrary

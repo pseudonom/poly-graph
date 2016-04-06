@@ -48,7 +48,7 @@ instance {-# OVERLAPPABLE #-} (a `PointsAt` b) => a `PointsAt` Maybe b where
   a `pointsAt` Nothing = a
 
 -- The underlying HGraph uses @Node@s. This instance translates @Node@s into something slightly friendlier.
-instance {-# OVERLAPPING #-} (a `PointsAt` b) => Node i (j ': is) a `PointsAt` Node j js b where
+instance {-# OVERLAPPING #-} (a `PointsAt` b) => Node i (e (j ': is)) a `PointsAt` Node j (f js) b where
   Node a `pointsAt` Node b = Node $ a `pointsAt` b
 
 instance (Arbitrary a) => Arbitrary (Node i is a) where

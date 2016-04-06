@@ -15,17 +15,16 @@
 module Data.Graph.HGraph.Internal where
 
 import Data.Monoid ((<>))
-import Data.Tagged (Tagged(..))
 import GHC.Generics (Generic)
 
-data Node (i :: k) (is :: [k]) a = Node { unNode :: a } deriving (Eq, Show, Functor, Generic)
+data Node (i :: k) (is :: Either [k] [k]) a = Node { unNode :: a } deriving (Eq, Show, Functor, Generic)
 
 retag :: Node i is a -> Node j js a
 retag (Node a) = Node a
 
 infixr 5 `Cons`
 data HGraph y where
-  Cons :: Node i is a -> HGraph b -> HGraph ('(a, i, is) ': b)
+  Cons :: Node i ('Right is) a -> HGraph b -> HGraph ('(a, i, is) ': b)
   Nil :: HGraph '[]
 
 instance (Show x, Show (HGraph xs)) => Show (HGraph ('(x, i, is) ': xs)) where
