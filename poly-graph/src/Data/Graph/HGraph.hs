@@ -48,10 +48,10 @@ instance GPointsAt () a where
 instance GPointsAt Void a where
   gPointsAt _ _ = error "impossible"
 
--- "Read-only" pattern allows convenient destructuring while encouraging preservation
+-- | "Read-only" pattern allows convenient destructuring while encouraging preservation
 -- linkage invariant
-infixr 5 :<:
-pattern a :<: b <- Node a `Cons` b
+infixr 5 :<
+pattern a :< b <- Node a `Cons` b
 
 class GNullify a where
   gNullify :: a -> a
@@ -94,65 +94,10 @@ instance {-# OVERLAPPING #-}
       a' = retag $ a `pointsAt` b
 
 infixr 5 ~>
-(~>) :: (Node i ('Right is) a `PointsAtR` HGraph b) => a -> HGraph b -> HGraph ('(a, i, is) ': b)
+(~>) ::
+  ((i `Member` b) ~ 'UniqueName, Node i ('Right is) a `PointsAtR` HGraph b) =>
+  a -> HGraph b -> HGraph ('(a, i, is) ': b)
 a ~> b = (Node a `pointsAtR` b) `Cons` b
-
-infixr 5 :<
-data a :< b = a :< b
-type Tree a = HGraph (Tree' 0 1 a)
-infixr 5 ++
-type family x ++ y where
-  '[] ++ y = y
-  (a ': b) ++ y = a ': b ++ y
-
-type BranchSize = 100
-type family Tree' n x a where
-  Tree' n x (b :< (c, d)) =
-    '(b, n, '[n + 1 * BranchSize ^ x, n + 2 * BranchSize ^ x]) ':
-      (Tree' (n + 1 * BranchSize ^ x) (x + 1) c) ++
-      (Tree' (n + 2 * BranchSize ^ x) (x + 1) d)
-  Tree' n x (b :< (c, d, e)) =
-    '(b, n, '[n + 1 * BranchSize ^ x, n + 2 * BranchSize ^ x, n + 3 * BranchSize ^ x]) ':
-      (Tree' (n + 1 * BranchSize ^ x) (x + 1) c) ++
-      (Tree' (n + 2 * BranchSize ^ x) (x + 1) d) ++
-      (Tree' (n + 3 * BranchSize ^ x) (x + 1) e)
-  Tree' n x (b :< c :< d) = '(b, n, '[n + 1]) ': Tree' (n + 1) x (c :< d)
-  Tree' n x (b :< c) = '(b, n, '[n + 1]) ': '(c, n + 1, '[]) ': '[]
-  Tree' n x b = '(b, n, '[]) ': '[]
-
-class TreeConv a b | a -> b where
-  tree :: a -> b
--- | Points at nothing
-instance TreeConv (HGraph ('(a, n, '[]) ': x)) a where
-  tree (a :<: Nil) = a
--- | Branch
-instance
-  ( TreeConv (HGraph ('(b, m, x) ': z)) i
-  , TreeConv (HGraph ('(c, o, y) ': z)) j
-  ) =>
-  TreeConv (HGraph ('(a, n, '[m, o]) ': '(b, m, x) ': '(c, o, y) ': z)) (a :< (i, j)) where
-  tree (a :<: b `Cons` c `Cons` x) = a :< (tree $ b `Cons` x, tree $ c `Cons` x)
-instance
-  ( TreeConv (HGraph ('(b, m, x) ': q)) i
-  , TreeConv (HGraph ('(c, o, y) ': q)) j
-  , TreeConv (HGraph ('(d, p, z) ': q)) k
-  ) =>
-  TreeConv (HGraph ('(a, n, '[m, o, p]) ': '(b, m, x) ': '(c, o, y) ': '(d, p, z) ': q)) (a :< (i, j, k)) where
-  tree (a :<: b `Cons` c `Cons` d `Cons` x) = a :< (tree $ b `Cons` x, tree $ c `Cons` x, tree $ d `Cons` x)
--- | Points at wrong thing
-instance {-# OVERLAPPABLE #-}
-  ( TreeConv (HGraph ('(a, n, '[m]) ': y)) i
-  , TreeConv (HGraph ('(b, o, x) ': y)) j
-  ) =>
-  TreeConv (HGraph ('(a, n, '[m]) ': '(b, o, x) ': y)) (i :< j) where
-  tree (a `Cons` b `Cons` c) = tree (a `Cons` c) :< tree (b `Cons` c)
--- | Adjacent
-instance
-  ( TreeConv (HGraph ('(b, m, x) ': y)) j
-  ) =>
-  TreeConv (HGraph ('(a, n, '[m]) ': '(b, m, x) ': y)) (a :< j) where
-  tree (a :<: b) = a :< tree b
-
 
 -- @RawGraph@ is required because, without it, we have to provide no-op @PointsAt@ instances for
 -- building the @Arbitrary@ graph we hand to @insertGraph@. i.e.
@@ -163,14 +108,18 @@ data RawGraph a = RawGraph { unRawGraph :: HGraph a }
 
 instance Arbitrary (RawGraph '[]) where
   arbitrary = pure $ RawGraph Nil
-instance (Arbitrary (Node i ('Right is) a), Arbitrary (RawGraph b)) => Arbitrary (RawGraph ('(a, i, is) ': b)) where
+instance
+  ((i `Member` b) ~ 'UniqueName, Arbitrary (Node i ('Right is) a), Arbitrary (RawGraph b)) =>
+  Arbitrary (RawGraph ('(a, i, is) ': b)) where
   arbitrary = do
     RawGraph <$> (Cons <$> arbitrary <*> (unRawGraph <$> arbitrary))
 
 instance Arbitrary (HGraph '[]) where
   arbitrary = pure Nil
 instance
-  (Node i ('Right is) a `PointsAtR` HGraph b, Arbitrary (Node i ('Right is) a), Arbitrary (HGraph b)) =>
+  ( (i `Member` b) ~ 'UniqueName, Node i ('Right is) a `PointsAtR` HGraph b
+  , Arbitrary (Node i ('Right is) a), Arbitrary (HGraph b)
+  ) =>
   Arbitrary (HGraph ('(a, i, is) ': b)) where
   arbitrary = do
     b <- arbitrary
@@ -183,3 +132,11 @@ instance {-# OVERLAPPING #-} Pluck name ('(b, name, is) ': c) b where
   pluck Proxy = _head
 instance (Pluck name d b) => Pluck name ('(c, otherName, is) ': d) b where
   pluck p = _tail . pluck p
+
+type Line as = HGraph (Line' as)
+
+type family Line' (as :: [k]) :: [(k, k, [k])] where
+  Line' '[k] = '[Ty k '[]]
+  Line' (k ': l ': m) = Ty k '[l] ': Line' (l ': m)
+
+type Ty a b = '(a, a, b)

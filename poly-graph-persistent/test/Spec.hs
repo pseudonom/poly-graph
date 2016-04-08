@@ -104,8 +104,6 @@ instance Student `PointsAt` Entity Teacher
 instance Teacher `PointsAt` Entity School
 instance School `PointsAt` Maybe (Entity District)
 
-type T a b = '(a, a, b)
-
 _entityKey :: Lens' (Entity a) (Key a)
 _entityKey pure' (Entity i e) = (\i' -> Entity i' e) <$> pure' i
 
@@ -121,27 +119,26 @@ main = do
       it "works with plucked lenses" $ db $ do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
-            :: M (
-                 HGraph
-                  '[ T Student '[Teacher]
-                   , T Teacher '[School]
-                   , T School '[]
-                   ]
-                 )
+            :: M (Line '[Student, Teacher, School])
         let graph' = graph & pluck (Proxy :: Proxy School) . schoolName .~ "Hello"
         liftIO $ print graph'
-      -- it "doesn't compile with a dangling (non-`Maybe`) key" $ db $ do
+      -- it "doesn't type check with a dangling (non-`Maybe`) key" $ db $ do
       --   graph <- liftIO (generate arbitrary) :: M (HGraph '[ '(Teacher, "Teacher", '[]) ])
+      --   liftIO $ print graph
+      -- it "doesn't type check with a repeated name" $ db $ do
+      --   graph <-
+      --     liftIO (generate arbitrary)
+      --     :: M (HGraph '[ '(Teacher, "Teacher", '["Teacher"]), '(Student, "Teacher", '[]) ])
       --   liftIO $ print graph
       it "generates arbitrary entities" $ db $ do
         graph <-
           liftIO (generate arbitrary)
-            :: M (Tree (Entity Student :< Entity Teacher :< Entity School :< Always (Entity District)))
+            :: M (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District)])
         liftIO $ print graph
       it "defaults `Maybe` keys to nothing" $ db $ do
         graph <-
           liftIO (generate arbitrary)
-            :: M (HGraph '[ '(SelfRef, "Plain", '[]) ])
+            :: M (Line '[ SelfRef ])
         liftIO $ (view selfRefSelfRefId . view _head $ graph) `shouldBe` Nothing
       it "works with Maybe key to plain" $ db $ do
         graph <-
@@ -215,14 +212,14 @@ main = do
 
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
-        (st :<: te :<: sc :<: Always di :<: Nil) <-
+        (st :< te :< sc :< Always di :< Nil) <-
           insertGraph graph
             :: M (
                  HGraph
-                   '[ T (Entity Student) '[Entity Teacher]
-                    , T (Entity Teacher) '[Entity School]
-                    , T (Entity School) '[Always (Entity District)]
-                    , T (Always (Entity District)) '[]
+                   '[ Ty (Entity Student) '[Entity Teacher]
+                    , Ty (Entity Teacher) '[Entity School]
+                    , Ty (Entity School) '[Always (Entity District)]
+                    , Ty (Always (Entity District)) '[]
                     ]
                  )
 

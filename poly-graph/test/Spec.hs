@@ -46,25 +46,25 @@ main :: IO ()
 main = hspec $ do
   let -- Make sure we support all combinations
       node = Node1 (Tagged 1) (Just $ Tagged 1) :: Node1 'Self 'Self
-      plainToPlain = node `pointsAt` node
-      plainToMaybe = node `pointsAt` Just node
-      plainToAlways = node `pointsAt` Always node
-      plainToNever = node `pointsAt` (Never :: Never (Node1 'Self 'Self))
+      plainToPlain = node `pointsAtDispatcher` node
+      plainToMaybe = node `pointsAtDispatcher` Just node
+      plainToAlways = node `pointsAtDispatcher` Always node
+      plainToNever = node `pointsAtDispatcher` (Never :: Never (Node1 'Self 'Self))
 
-      maybeToPlain = Just node `pointsAt` node
-      maybeToMaybe = Just node `pointsAt` Just node
-      maybeToAlways = Just node `pointsAt` Always node
-      maybeToNever = Just node `pointsAt` (Never :: Never (Node1 'Self 'Self))
+      maybeToPlain = Just node `pointsAtDispatcher` node
+      maybeToMaybe = Just node `pointsAtDispatcher` Just node
+      maybeToAlways = Just node `pointsAtDispatcher` Always node
+      maybeToNever = Just node `pointsAtDispatcher` (Never :: Never (Node1 'Self 'Self))
 
-      alwaysToPlain = Always node `pointsAt` node
-      alwaysToMaybe = Always node `pointsAt` Just node
-      alwaysToAlways = Always node `pointsAt` Always node
-      alwaysToNever = Always node `pointsAt` (Never :: Never (Node1 'Self 'Self))
+      alwaysToPlain = Always node `pointsAtDispatcher` node
+      alwaysToMaybe = Always node `pointsAtDispatcher` Just node
+      alwaysToAlways = Always node `pointsAtDispatcher` Always node
+      alwaysToNever = Always node `pointsAtDispatcher` (Never :: Never (Node1 'Self 'Self))
 
-      neverToPlain = (Never :: Never (Node1 'Self 'Self)) `pointsAt` node
-      neverToMaybe = (Never :: Never (Node1 'Self 'Self)) `pointsAt` Just node
-      neverToAlways = (Never :: Never (Node1 'Self 'Self)) `pointsAt` Always node
-      neverToNever = (Never :: Never (Node1 'Self 'Self)) `pointsAt` (Never :: Never (Node1 'Self 'Self))
+      neverToPlain = (Never :: Never (Node1 'Self 'Self)) `pointsAtDispatcher` node
+      neverToMaybe = (Never :: Never (Node1 'Self 'Self)) `pointsAtDispatcher` Just node
+      neverToAlways = (Never :: Never (Node1 'Self 'Self)) `pointsAtDispatcher` Always node
+      neverToNever = (Never :: Never (Node1 'Self 'Self)) `pointsAtDispatcher` (Never :: Never (Node1 'Self 'Self))
 
   describe "~>" $ do
     it "works for simple chains" $
@@ -76,6 +76,9 @@ main = hspec $ do
     it "works for a complicated mess" $
       inAndOut `shouldBe` inAndOut'
 
+instance Node1 'Self 'Self `PointsAt` Maybe (Node1 'Self 'Self) where
+  (Node1 id1 _) `pointsAt` Just (Node1 id2 _) = Node1 id1 (Just id2)
+  (Node1 id1 _) `pointsAt` Nothing = Node1 id1 Nothing
 instance Node1 'Self 'Self `PointsAt` Node1 'Self 'Self where
   (Node1 id1 _) `pointsAt` (Node1 id2 _) = Node1 id1 (Just id2)
 instance Node1 'A 'B `PointsAt` Node1 'B 'C where
@@ -87,24 +90,14 @@ instance Node2 'C 'A 'B `PointsAt` Node1 'A 'B where
 instance Node2 'C 'A 'B `PointsAt` Node1 'B 'C where
   (Node2 idc ida _) `pointsAt` (Node1 idb _) = Node2 idc ida (Just idb)
 
-simpleChain ::
-  Tree (
-    Node1 'A 'B :<
-      Node1 'B 'C :<
-        Node2 'C 'A 'B
-  )
+simpleChain :: Line '[Node1 'A 'B, Node1 'B 'C, Node2 'C 'A 'B]
 simpleChain =
   Node1 1 (Just 6) ~>
     Node1 2 Nothing ~>
       Node2 3 Nothing Nothing ~>
         Nil
 
-simpleChain' ::
-  HGraph
-  [ '(Node1 'A 'B, 0, '[1])
-  , '(Node1 'B 'C, 1, '[2])
-  , '(Node2 'C 'A 'B, 2, '[])
-  ]
+simpleChain' :: Line '[Node1 'A 'B, Node1 'B 'C, Node2 'C 'A 'B]
 simpleChain' =
   Node (Node1 1 (Just 2)) `Cons`
     Node (Node1 2 (Just 3)) `Cons`
@@ -122,12 +115,12 @@ simpleChain' =
 -- +----->B>----->C
 -- @
 fanOut ::
-  Tree (
-    Node2 'C 'A 'B :<
-      ( Node1 'A B
-      , Node1 'B 'C :< Node2 'C 'A B
-      )
-  )
+  HGraph
+    '[ '(Node2 'C 'A 'B, "C1", '["A", "B"])
+     , '(Node1 'A 'B, "A", '[])
+     , '(Node1 'B 'C, "B", '["C2"])
+     , '(Node2 'C 'A 'B, "C2", '[])
+     ]
 fanOut =
   Node2 1 (Just 4) Nothing ~>
     Node1 2 Nothing ~>
@@ -136,22 +129,16 @@ fanOut =
 
 fanOut' ::
   HGraph
-  [ '(Node2 'C 'A 'B, 0, '[100, 200])
-  , '(Node1 'A 'B, 100, '[])
-  , '(Node1 'B 'C, 200, '[201])
-  , '(Node2 'C 'A 'B, 201, '[])
-  ]
+    '[ '(Node2 'C 'A 'B, "C1", '["A", "B"])
+     , '(Node1 'A 'B, "A", '[])
+     , '(Node1 'B 'C, "B", '["C2"])
+     , '(Node2 'C 'A 'B, "C2", '[])
+     ]
 fanOut' =
   Node (Node2 1 (Just 2) (Just 3)) `Cons`
     Node (Node1 2 Nothing) `Cons`
     Node (Node1 3 (Just 4)) `Cons`
       Node (Node2 4 Nothing Nothing) `Cons` Nil
-
--- | Our "read-only" patterns work as expected
-deconstruct :: (Node2 'C 'A 'B, Node1 'A 'B, Node1 'B 'C, Node2 'C 'A B)
-deconstruct =
-  case tree fanOut of
-    c1 :< (a, b :< c2) -> (c1, a, b, c2)
 
 -- | Graph looks like
 -- @

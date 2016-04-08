@@ -152,7 +152,8 @@ instance
     pure $ e `Cons` Nil
 -- | HGraph recursive case
 instance
-  ( Node i ('Right is) a `PointsAtR` HGraph (e ': f)
+  ( (i `Member` (e ': f)) ~ 'UniqueName
+  , Node i ('Right is) a `PointsAtR` HGraph (e ': f)
   , InsertGraph (b ': c) (e ': f) backend
   , InsertElement a d backend
   ) =>

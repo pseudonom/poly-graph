@@ -7,6 +7,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
 -- | You should try to avoid using this module.
@@ -26,9 +27,18 @@ instance (Arbitrary a) => Arbitrary (Node i is a) where
 retag :: Node i is a -> Node j js a
 retag (Node a) = Node a
 
+data IsDuplicateName a
+  = UniqueName
+  | DuplicateName a
+
+type family Member (a :: k) (as :: [(t, k, [k])]) :: IsDuplicateName k where
+  Member a '[] = 'UniqueName
+  Member name ('(b, name, js) ': as) = 'DuplicateName name
+  Member a (b ': as) = Member a as
+
 infixr 5 `Cons`
 data HGraph y where
-  Cons :: Node i ('Right is) a -> HGraph b -> HGraph ('(a, i, is) ': b)
+  Cons :: ((i `Member` b) ~ 'UniqueName) => Node i ('Right is) a -> HGraph b -> HGraph ('(a, i, is) ': b)
   Nil :: HGraph '[]
 
 instance (Show x, Show (HGraph xs)) => Show (HGraph ('(x, i, is) ': xs)) where
