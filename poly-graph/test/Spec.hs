@@ -31,16 +31,10 @@ data Node2 (self :: Typ) (other1 :: Typ) (other2 :: Typ)
   , pointer2 :: Maybe (Tagged other2 Int)
   } deriving (Show, Eq, Generic)
 
-instance
-  {-# OVERLAPPABLE #-}
-  (b `GPointsAt` c) =>
-  (a, b) `GPointsAt` c where
-  (a, b) `gPointsAt` c = (a, b `gPointsAt` c)
-instance
-  {-# OVERLAPPABLE #-}
-  (GNullify b) =>
-  GNullify (a, b) where
-  gNullify (a, b) = (a, gNullify b)
+instance a `FieldPointsAt` b where
+  fieldPointsAt = const
+instance Nullify a where
+  nullify = id
 
 main :: IO ()
 main = hspec $ do

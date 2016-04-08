@@ -37,49 +37,35 @@ pattern Always a = Identity a
 pattern Never = Proxy
 
 instance
-  {-# OVERLAPPING #-}
-  (b `GPointsAt` Entity a) =>
-  (Key a, b) `GPointsAt` Always (Entity a) where
-  (_, b) `gPointsAt` Always e@(Entity k _) = (k, b `gPointsAt` e)
+  Key a `FieldPointsAt` Entity a where
+  _ `fieldPointsAt` (Entity k _) = k
 instance
-  {-# OVERLAPPING #-}
-  (b `GPointsAt` Entity a) =>
-  (Key a, b) `GPointsAt` (Entity a) where
-  (_, b) `gPointsAt` e@(Entity k _) = (k, b `gPointsAt` e)
+  Maybe (Key a) `FieldPointsAt` Maybe (Entity a) where
+  _ `fieldPointsAt` Just (Entity k _) = Just k
+  _ `fieldPointsAt` Nothing = Nothing
 instance
-  {-# OVERLAPPING #-}
-  (b `GPointsAt` Maybe (Entity a)) =>
-  (Maybe (Key a), b) `GPointsAt` (Maybe (Entity a)) where
-  (_, b) `gPointsAt` e@(Just (Entity k _)) = (Just k, b `gPointsAt` e)
-  (_, b) `gPointsAt` e@(Nothing) = (Nothing, b `gPointsAt` e)
-instance
-  {-# OVERLAPPING #-}
-  (b `GPointsAt` Entity a) =>
-  (Maybe (Key a), b) `GPointsAt` (Entity a) where
-  (_, b) `gPointsAt` e@(Entity k _) = (Just k, b `gPointsAt` e)
+  Maybe (Key a) `FieldPointsAt` Entity a where
+  _ `fieldPointsAt` (Entity k _) = Just k
 instance
   {-# OVERLAPPABLE #-}
-  (b `GPointsAt` c) =>
-  (a, b) `GPointsAt` c where
-  (a, b) `gPointsAt` c = (a, b `gPointsAt` c)
+  a `FieldPointsAt` b where
+  fieldPointsAt = const
 
 type family TypeError (msg :: Symbol) (a :: k) :: j
 
 instance
   {-# OVERLAPPING #-}
-  (GNullify b) =>
-  GNullify (Maybe (Key a), b) where
-  gNullify (_, b) = (Nothing, gNullify b)
+  Nullify (Maybe (Key a)) where
+  nullify _ = Nothing
 instance
   {-# OVERLAPPING #-}
-  (GNullify b, TypeError "Missing pointer to" a) =>
-  GNullify (Key a, b) where
-  gNullify _ = error "Dangling key"
+  (TypeError "Missing pointer to" a) =>
+  Nullify (Key a) where
+  nullify _ = error "Dangling key"
 instance
   {-# OVERLAPPABLE #-}
-  (GNullify b) =>
-  GNullify (a, b) where
-  gNullify (a, b) = (a, gNullify b)
+  Nullify a where
+  nullify = id
 
 data Entity'
 

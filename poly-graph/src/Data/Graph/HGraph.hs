@@ -40,24 +40,38 @@ class a `PointsAt` b where
 class a `GPointsAt` b where
   infixr 5 `gPointsAt`
   gPointsAt :: a -> b -> a
-instance (a `GPointsAt` c, b `GPointsAt` c) => Either a b `GPointsAt` c where
+instance
+  (a `GPointsAt` c, b `GPointsAt` c) =>
+  Either a b `GPointsAt` c where
   Left a `gPointsAt` b = Left $ a `gPointsAt` b
   Right a `gPointsAt` b = Right $ a `gPointsAt` b
+instance
+  (a `FieldPointsAt` c, b `GPointsAt` c) =>
+  (a, b) `GPointsAt` c where
+  (a, b) `gPointsAt` c = (a `fieldPointsAt` c, b `gPointsAt` c)
 instance GPointsAt () a where
   gPointsAt _ _ = ()
 instance GPointsAt Void a where
   gPointsAt _ _ = error "impossible"
+
+class FieldPointsAt a b where
+  fieldPointsAt :: a -> b -> a
 
 -- | "Read-only" pattern allows convenient destructuring while encouraging preservation
 -- linkage invariant
 infixr 5 :<
 pattern a :< b <- Node a `Cons` b
 
+class Nullify a where
+  nullify :: a -> a
+
 class GNullify a where
   gNullify :: a -> a
 instance (GNullify a, GNullify b) => GNullify (Either a b) where
   gNullify (Left a) = Left $ gNullify a
   gNullify (Right b) = Right $ gNullify b
+instance (Nullify a, GNullify b) => GNullify (a, b) where
+  gNullify (a, b) = (nullify a, gNullify b)
 instance GNullify () where
   gNullify _ = ()
 instance GNullify Void where
