@@ -52,6 +52,11 @@ runConn f =
   withSqlitePool "test/testdb.sqlite3" 1 $
   runSqlPool f
 
+instance (Arbitrary a) => Arbitrary (Always a) where
+  arbitrary = pure <$> arbitrary
+instance Arbitrary (Never a) where
+  arbitrary = pure Never
+
 instance Arbitrary Text where
   arbitrary = pack . filter (not . isBadChar) <$> arbitrary
     where isBadChar x = x == '\NUL' || x == '\\' -- Make postgres vomit
@@ -92,11 +97,20 @@ instance Arbitrary SelfRef where
 -- @instance (a `PointsAt` Maybe b) => a `PointsAt` b where a `pointsAt` b = a `pointsAt` Just b@
 -- However, if we do, any graphs with a missing instance match this instance and then fail via
 -- a context reduction stack overflow which is pretty ugly.
-instance SelfRef `PointsAt` (Entity SelfRef)
-instance SelfRef `PointsAt` (Maybe (Entity SelfRef))
-instance Student `PointsAt` (Entity Teacher)
-instance Teacher `PointsAt` (Entity School)
-instance School `PointsAt` (Maybe (Entity District))
+
+instance SelfRef `PointsAt` Entity SelfRef
+instance SelfRef `PointsAt` Maybe (Entity SelfRef)
+instance Student `PointsAt` Entity Teacher
+instance Teacher `PointsAt` Entity School
+instance School `PointsAt` Maybe (Entity District)
+
+type T a b = '(a, a, b)
+
+_entityKey :: Lens' (Entity a) (Key a)
+_entityKey pure' (Entity i e) = (\i' -> Entity i' e) <$> pure' i
+
+_entityVal :: Lens' (Entity a) a
+_entityVal pure' (Entity i e) = (\e' -> Entity i e') <$> pure' e
 
 type M = ReaderT SqlBackend (LoggingT (ResourceT IO))
 main :: IO ()
@@ -109,12 +123,12 @@ main = do
           unRawGraph <$> liftIO (generate arbitrary)
             :: M (
                  HGraph
-                  '[ '(Student, "Student", '["Teacher"])
-                   , '(Teacher, "Teacher", '["School"])
-                   , '(School, "School", '[])
+                  '[ T Student '[Teacher]
+                   , T Teacher '[School]
+                   , T School '[]
                    ]
                  )
-        let graph' = graph & pluck (Proxy :: Proxy "School") . schoolName .~ "Hello"
+        let graph' = graph & pluck (Proxy :: Proxy School) . schoolName .~ "Hello"
         liftIO $ print graph'
       -- it "doesn't compile with a dangling (non-`Maybe`) key" $ db $ do
       --   graph <- liftIO (generate arbitrary) :: M (HGraph '[ '(Teacher, "Teacher", '[]) ])
@@ -139,7 +153,6 @@ main = do
                     , '(Never SelfRef, "Never", '[])
                     ]
                  )
-        liftIO $ print graph
         graph' <-
           insertGraph graph
             :: M (
@@ -149,7 +162,9 @@ main = do
                     , '(Never (Entity SelfRef), "Never", '[])
                     ]
                  )
-        liftIO $ print graph'
+        liftIO $
+          (graph' ^. pluck (Proxy :: Proxy "Plain1") . _entityVal . selfRefSelfRefId) `shouldBe`
+          (Just $ graph' ^. pluck (Proxy :: Proxy "Plain2") . _entityKey)
       it "works with a variety of `Maybe`, `Always`, `Never` combinations" $ db $ do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
@@ -200,14 +215,14 @@ main = do
 
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
-        (tree -> st :< te :< sc :< Always di) <-
+        (st :<: te :<: sc :<: Always di :<: Nil) <-
           insertGraph graph
             :: M (
                  HGraph
-                   '[ '(Entity Student, "Student", '["Teacher"])
-                    , '(Entity Teacher, "Teacher", '["School"])
-                    , '(Entity School, "School", '["District"])
-                    , '(Always (Entity District), "District", '[])
+                   '[ T (Entity Student) '[Entity Teacher]
+                    , T (Entity Teacher) '[Entity School]
+                    , T (Entity School) '[Always (Entity District)]
+                    , T (Always (Entity District)) '[]
                     ]
                  )
 

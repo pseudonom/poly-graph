@@ -16,8 +16,12 @@ module Data.Graph.HGraph.Internal where
 
 import Data.Monoid ((<>))
 import GHC.Generics (Generic)
+import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
 data Node (i :: k) (is :: Either [k] [k]) a = Node { unNode :: a } deriving (Eq, Show, Functor, Generic)
+
+instance (Arbitrary a) => Arbitrary (Node i is a) where
+  arbitrary = Node <$> arbitrary
 
 retag :: Node i is a -> Node j js a
 retag (Node a) = Node a

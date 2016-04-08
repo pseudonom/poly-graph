@@ -27,6 +27,7 @@ import GHC.TypeLits
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
 import Data.Graph.HGraph
+import Data.Graph.HGraph.Instances hiding (Always, pattern Always, Never, pattern Never)
 import Data.Graph.HGraph.Internal
 
 type Never = Proxy
@@ -37,18 +38,23 @@ pattern Never = Proxy
 
 instance
   {-# OVERLAPPING #-}
-  (b `GPointsAt` (Entity a)) =>
+  (b `GPointsAt` Entity a) =>
+  (Key a, b) `GPointsAt` Always (Entity a) where
+  (_, b) `gPointsAt` Always e@(Entity k _) = (k, b `gPointsAt` e)
+instance
+  {-# OVERLAPPING #-}
+  (b `GPointsAt` Entity a) =>
   (Key a, b) `GPointsAt` (Entity a) where
   (_, b) `gPointsAt` e@(Entity k _) = (k, b `gPointsAt` e)
 instance
   {-# OVERLAPPING #-}
-  (b `GPointsAt` (Maybe (Entity a))) =>
+  (b `GPointsAt` Maybe (Entity a)) =>
   (Maybe (Key a), b) `GPointsAt` (Maybe (Entity a)) where
   (_, b) `gPointsAt` e@(Just (Entity k _)) = (Just k, b `gPointsAt` e)
   (_, b) `gPointsAt` e@(Nothing) = (Nothing, b `gPointsAt` e)
 instance
   {-# OVERLAPPING #-}
-  (b `GPointsAt` (Entity a)) =>
+  (b `GPointsAt` Entity a) =>
   (Maybe (Key a), b) `GPointsAt` (Entity a) where
   (_, b) `gPointsAt` e@(Entity k _) = (Just k, b `gPointsAt` e)
 instance
@@ -75,15 +81,15 @@ instance
   GNullify (a, b) where
   gNullify (a, b) = (a, gNullify b)
 
-instance {-# OVERLAPPING #-} (a `PointsAt` b) => Entity a `PointsAt` b where
-  Entity i a `pointsAt` b = Entity i $ a `pointsAt` b
--- These 3 avoid are to avoid overlap ambiguity
-instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => Entity a `PointsAt` Always b where
-  Entity i a `pointsAt` Always b = Entity i a `pointsAt` (Just b :: Maybe b)
-instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => Entity a `PointsAt` Never b where
-  Entity i a `pointsAt` Never = Entity i $ a `pointsAt` (Nothing :: Maybe b)
-instance {-# OVERLAPPING #-} (a `PointsAt` Maybe b) => Entity a `PointsAt` Maybe b where
-  Entity i a `pointsAt` b = Entity i $ a `pointsAt` b
+data Entity'
+
+type instance TyConType Entity = Entity'
+type instance HandleLeft Entity' = Entity'
+
+instance (a `DispatchOnTyCons` b) => PointsAtInternal Entity' r (Entity a) b where
+  pointsAtInternal Proxy Proxy (Entity i a) b = Entity i $ a `pointsAtDispatcher` b
+instance (a `PointsAt` Entity b) => PointsAtInternal NoTyCon Entity' a (Entity b) where
+  pointsAtInternal Proxy Proxy a b = a `pointsAt` b
 
 -- | End of graph
 instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i ('Right '[]) (Entity a) `PointsAtR` HGraph '[] where
