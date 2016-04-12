@@ -23,7 +23,9 @@ module Data.Graph.HGraph
   , X.retag
   ) where
 
+import Data.Functor.Identity
 import Data.Proxy
+import Debug.Trace
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import GHC.TypeLits
 import Test.QuickCheck.Arbitrary
@@ -67,11 +69,11 @@ class Nullify a where
 
 class GNullify a where
   gNullify :: a -> a
-instance (GNullify a, GNullify b) => GNullify (Either a b) where
-  gNullify (Left a) = Left $ gNullify a
-  gNullify (Right b) = Right $ gNullify b
-instance (Nullify a, GNullify b) => GNullify (a, b) where
-  gNullify (a, b) = (nullify a, gNullify b)
+instance (Show a, Show b, GNullify a, GNullify b) => GNullify (Either a b) where
+  gNullify l@(Left a) = trace (show l) $ Left $ gNullify a
+  gNullify r@(Right b) = trace (show r) $ Right $ gNullify b
+instance (Show a, Show b, Nullify a, GNullify b) => GNullify (a, b) where
+  gNullify (a, b) = trace (show (a, b)) $ (nullify a, gNullify b)
 instance GNullify () where
   gNullify _ = ()
 instance GNullify Void where
@@ -80,16 +82,22 @@ instance GNullify Void where
 class a `PointsAtR` b where
   pointsAtR :: a -> b -> a
 
---- - | End of graph. Final node never pointed at anything. Default `Maybe`s to `Nothing`.
-instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i ('Right '[]) a `PointsAtR` HGraph '[] where
-  -- We use `GNullify` so we can default a `Maybe` key at the end of the graph to `Nothing`
-  Node a `pointsAtR` _ = Node . fromEot . gNullify $ toEot a
--- | End of graph. Final node used to point at things. Preserve the preceding nullification
-instance {-# OVERLAPPING #-} Node i ('Left '[]) a `PointsAtR` HGraph '[] where
-  pointsAtR = const
+type Never = Proxy
+type Always = Identity
+
+pattern Always a = Identity a
+pattern Never = Proxy
+
 -- | Points at nothing. Never pointed at anything. Default `Maybe`s to `Nothing`.
-instance (HasEot a, GNullify (Eot a)) => Node i ('Right '[]) a `PointsAtR` (HGraph b) where
-  Node a `pointsAtR` _ = Node . fromEot . gNullify $ toEot a
+instance {-# OVERLAPPABLE #-} (Show a, HasEot a, GNullify (Eot a)) => Node i ('Right '[]) a `PointsAtR` (HGraph b) where
+  Node a `pointsAtR` _ = trace ("Nullifying " ++ show a) . Node . fromEot . gNullify $ toEot a
+instance (Show a, HasEot a, GNullify (Eot a)) => Node i ('Right '[]) (Always a) `PointsAtR` (HGraph b) where
+  Node (Always a) `pointsAtR` _ = trace ("Nullifying " ++ show a) . Node . Always . fromEot . gNullify $ toEot a
+instance (Show a, HasEot a, GNullify (Eot a)) => Node i ('Right '[]) (Maybe a) `PointsAtR` (HGraph b) where
+  Node (Just a) `pointsAtR` _ = trace ("Nullifying " ++ show a) . Node . Just . fromEot . gNullify $ toEot a
+  Node Nothing `pointsAtR` _ = Node Nothing
+instance Node i ('Right '[]) (Never a) `PointsAtR` (HGraph b) where
+  Node Never `pointsAtR` _ = Node Never
 -- | Points at nothing. Used to point at something. Preserve prior linking.
 instance Node i ('Left '[]) a `PointsAtR` (HGraph b) where
   pointsAtR = const

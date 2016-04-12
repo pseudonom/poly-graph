@@ -19,7 +19,7 @@
 
 import Test.Hspec
 
-import Control.Lens hiding ((:<), _head)
+import Control.Lens hiding ((:<), _head, _tail)
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Logger (LoggingT(..))
@@ -27,6 +27,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT, MonadBaseControl)
 import qualified Data.ByteString.Char8 as B8
+import Data.Maybe
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
 import Data.Type.Equality (type (==))
@@ -81,6 +82,11 @@ share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigra
     name Text
     teacherId TeacherId
     deriving Show Eq Generic
+  Foo
+    name Text
+    studentId StudentId Maybe
+    teacherId TeacherId Maybe
+    deriving Show Eq Generic
 |]
 instance Arbitrary District where
   arbitrary = pure $ District "foo"
@@ -92,6 +98,8 @@ instance Arbitrary Student where
   arbitrary = Student "qux" <$> arbitrary
 instance Arbitrary SelfRef where
   arbitrary = SelfRef "self" <$> arbitrary
+instance Arbitrary Foo where
+  arbitrary = Foo "foo" <$> arbitrary <*> arbitrary
 
 -- We ought to be able to provide a generic instance like
 -- @instance (a `PointsAt` Maybe b) => a `PointsAt` b where a `pointsAt` b = a `pointsAt` Just b@
@@ -103,6 +111,8 @@ instance SelfRef `PointsAt` Maybe (Entity SelfRef)
 instance Student `PointsAt` Entity Teacher
 instance Teacher `PointsAt` Entity School
 instance School `PointsAt` Maybe (Entity District)
+instance Foo `PointsAt` Entity Student
+instance Foo `PointsAt` Entity Teacher
 
 _entityKey :: Lens' (Entity a) (Key a)
 _entityKey pure' (Entity i e) = (\i' -> Entity i' e) <$> pure' i
@@ -135,11 +145,36 @@ main = do
           liftIO (generate arbitrary)
             :: M (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District)])
         liftIO $ print graph
-      it "defaults `Maybe` keys to nothing" $ db $ do
-        graph <-
+      it "defaults only missing keys to nothing" $ db $ do
+        arbGraph <- unRawGraph <$> liftIO (generate arbitrary)
+        entGraph <-
+          insertGraph arbGraph
+          :: M (
+               HGraph
+                '[ '(Entity Foo, "F", '["S"])
+                 , '(Entity Student, "S", '["T"])
+                 , '(Entity Teacher, "T", '["Sc"])
+                 , '(Entity School, "Sc", '[])
+                 ]
+               )
+        liftIO $ (entGraph ^. _head . _entityVal . fooTeacherId) `shouldBe` Nothing
+        liftIO $ (entGraph ^. _head . _entityVal . fooStudentId) `shouldBe` (Just $ entGraph ^. _tail . _head . _entityKey)
+      it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're at the end of the graph" $ db $ do
+        arbGraph <- liftIO (generate arbitrary) :: M (Line '[Maybe (Entity SelfRef)])
+        liftIO $ (arbGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+      it "defaults `Maybe` keys to `Nothing` during insertion when they're at the end of the graph" $ db $ do
+        entGraph <- insertGraph . unRawGraph =<< liftIO (generate arbitrary) :: M (Line '[Maybe (Entity SelfRef)])
+        liftIO $ (entGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+      it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're at the end of the graph" $ db $ do
+        arbGraph <-
           liftIO (generate arbitrary)
-            :: M (Line '[ SelfRef ])
-        liftIO $ (view selfRefSelfRefId . view _head $ graph) `shouldBe` Nothing
+          :: M (HGraph '[ '(Maybe (Entity SelfRef), 1, '[]), '(Maybe (Entity SelfRef), 2, '[]) ])
+        liftIO $ (arbGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+      it "defaults `Maybe` keys to `Nothing` during insertion when they're in the middle of the graph" $ db $ do
+        entGraph <-
+          insertGraph . unRawGraph =<< liftIO (generate arbitrary)
+          :: M (HGraph '[ '(Maybe (Entity SelfRef), 1, '[]), '(Maybe (Entity SelfRef), 2, '[]) ])
+        liftIO $ (entGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "works with Maybe key to plain" $ db $ do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)

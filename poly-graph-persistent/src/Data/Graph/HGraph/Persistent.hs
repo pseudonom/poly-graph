@@ -22,19 +22,14 @@ import Data.Functor.Identity
 import Data.Proxy
 import Database.Persist
 import Database.Persist.Sql
+import Debug.Trace
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import GHC.TypeLits
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
 import Data.Graph.HGraph
-import Data.Graph.HGraph.Instances hiding (Always, pattern Always, Never, pattern Never)
+import Data.Graph.HGraph.Instances
 import Data.Graph.HGraph.Internal
-
-type Never = Proxy
-type Always = Identity
-
-pattern Always a = Identity a
-pattern Never = Proxy
 
 instance
   Key a `FieldPointsAt` Entity a where
@@ -55,17 +50,19 @@ type family TypeError (msg :: Symbol) (a :: k) :: j
 
 instance
   {-# OVERLAPPING #-}
+  (Show (Key a)) =>
   Nullify (Maybe (Key a)) where
-  nullify _ = Nothing
+  nullify a = trace ("Nullify " ++ show a) Nothing
 instance
   {-# OVERLAPPING #-}
-  (TypeError "Missing pointer to" a) =>
+  (Show (Key a), TypeError "Missing pointer to" a) =>
   Nullify (Key a) where
-  nullify _ = error "Dangling key"
+  nullify a = trace ("Preserve2 " ++ show a) a
 instance
   {-# OVERLAPPABLE #-}
+  (Show a) =>
   Nullify a where
-  nullify = id
+  nullify a = trace ("Preserve " ++ show a) a
 
 data Entity'
 
@@ -77,12 +74,31 @@ instance (a `DispatchOnTyCons` b) => PointsAtInternal Entity' r (Entity a) b whe
 instance (a `PointsAt` Entity b) => PointsAtInternal NoTyCon Entity' a (Entity b) where
   pointsAtInternal Proxy Proxy a b = a `pointsAt` b
 
--- | End of graph
-instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i ('Right '[]) (Entity a) `PointsAtR` HGraph '[] where
-  Node (Entity i a) `pointsAtR` _ = Node . Entity i . fromEot . gNullify $ toEot a
 -- | Points at nothing
-instance {-# OVERLAPPING #-} (HasEot a, GNullify (Eot a)) => Node i ('Right '[]) (Entity a) `PointsAtR` (HGraph b) where
-  Node (Entity i a) `pointsAtR` _ = Node . Entity i . fromEot . gNullify $ toEot a
+instance
+  {-# OVERLAPPING #-}
+  (Show a, HasEot a, GNullify (Eot a)) =>
+  Node i ('Right '[]) (Entity a) `PointsAtR` (HGraph b) where
+  Node (Entity i a) `pointsAtR` _ =
+    trace ("Entity nullify " ++ show a) $ Node . Entity i . fromEot . gNullify $ toEot a
+instance
+  {-# OVERLAPPING #-}
+  (Show a, HasEot a, GNullify (Eot a)) =>
+  Node i ('Right '[]) (Maybe (Entity a)) `PointsAtR` (HGraph b) where
+  Node (Just (Entity i a)) `pointsAtR` _ =
+    trace ("Entity nullify " ++ show a) $ Node . Just . Entity i . fromEot . gNullify $ toEot a
+  Node Nothing `pointsAtR` _ = Node Nothing
+instance
+  {-# OVERLAPPING #-}
+  (Show a, HasEot a, GNullify (Eot a)) =>
+  Node i ('Right '[]) (Never (Entity a)) `PointsAtR` (HGraph b) where
+  Node Never `pointsAtR` _ = Node Never
+instance
+  {-# OVERLAPPING #-}
+  (Show a, HasEot a, GNullify (Eot a)) =>
+  Node i ('Right '[]) (Always (Entity a)) `PointsAtR` (HGraph b) where
+  Node (Always (Entity i a)) `pointsAtR` _ =
+    trace ("Entity nullify " ++ show a) $ Node . Always . Entity i . fromEot . gNullify $ toEot a
 
 class InsertEntityGraph a backend | a -> backend where
   insertEntityGraph ::
@@ -124,24 +140,25 @@ type family UnwrapAll a where
   UnwrapAll '[] = '[]
 
 
-class InsertGraph a b backend | a -> b, b -> a, a -> backend , b -> backend where
+class InsertGraph a b backend where -- | a -> b, b -> a, a -> backend , b -> backend where
   insertGraph ::
     (Monad m, MonadIO m, PersistStore backend, UnwrapAll b ~ a) =>
     HGraph a -> ReaderT backend m (HGraph b)
 
 -- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
 instance
-  (InsertElement a b backend) =>
+  (InsertElement a b is backend, Show a, HasEot a, GNullify (Eot a)) =>
   InsertGraph '[ '(a, i, is)] '[ '(b, i, is)] backend where
   insertGraph (a `Cons` Nil) = do
     e <- insertElement a
     pure $ e `Cons` Nil
+
 -- | HGraph recursive case
 instance
   ( (i `Member` (e ': f)) ~ 'UniqueName
   , Node i ('Right is) a `PointsAtR` HGraph (e ': f)
   , InsertGraph (b ': c) (e ': f) backend
-  , InsertElement a d backend
+  , InsertElement a d is backend
   ) =>
   InsertGraph ('(a, i, is) ': b ': c) ('(d, i, is) ': e ': f) backend where
   insertGraph (a `Cons` b) = do
@@ -151,20 +168,35 @@ instance
     pure $ a'' `Cons` b'
 
 
-class InsertElement a b backend | a -> b, b -> a, a -> backend, b -> backend where
+class InsertElement a b is backend where -- | a -> b, b -> a, a -> backend, b -> backend where
   insertElement ::
     (Monad m, MonadIO m, PersistStore backend, Unwrap b ~ a) =>
-    Node i is a -> ReaderT backend m (Node j js b)
+    Node i ('Right is) a -> ReaderT backend m (Node j js b)
+instance
+  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, HasEot a, GNullify (Eot a)) =>
+  InsertElement a (Entity a) '[] backend where
+  insertElement (Node a) = Node . flip Entity a' <$> insert a'
+    where a' = fromEot . gNullify . toEot $ a
 instance
   (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a) =>
-  InsertElement a (Entity a) backend where
+  InsertElement a (Entity a) (i ': is) backend where
   insertElement (Node a) = Node . flip Entity a <$> insert a
 instance
-  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, Traversable f, Applicative f) =>
-  InsertElement (f a) (f (Entity a)) backend where
+  (Show (f a), HasEot a, GNullify (Eot a), PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, Traversable f, Applicative f) =>
+  InsertElement (f a) (f (Entity a)) '[] backend where
   insertElement (Node fa) = do
+    trace ("inserting " ++ show fa) (pure ())
+    let fa' = fromEot . gNullify . toEot <$> fa
+    fid <- traverse insert fa'
+    pure $ Node (Entity <$> fid <*> fa')
+instance
+  (Show (f a), PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, Traversable f, Applicative f) =>
+  InsertElement (f a) (f (Entity a)) (i ': is) backend where
+  insertElement (Node fa) = do
+    trace ("inserting " ++ show fa) (pure ())
     fid <- traverse insert fa
     pure $ Node (Entity <$> fid <*> fa)
+
 
 instance (ToBackendKey SqlBackend a) => Arbitrary (Key a) where
   arbitrary = toSqlKey <$> arbitrary

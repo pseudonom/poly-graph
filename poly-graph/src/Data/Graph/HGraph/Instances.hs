@@ -13,17 +13,9 @@
 
 module Data.Graph.HGraph.Instances where
 
-import Data.Functor.Identity
 import Data.Proxy
-import Data.Tagged
 
 import Data.Graph.HGraph
-
-type Never = Proxy
-type Always = Identity
-
-pattern Always a = Identity a
-pattern Never = Proxy
 
 -- | The underlying HGraph uses @Node@s.
 -- This instance unwraps @Node@s and tries to find a way to point one node body at the other.
