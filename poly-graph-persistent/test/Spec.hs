@@ -43,6 +43,7 @@ import Test.QuickCheck.Gen (generate)
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances ()
 import Data.Graph.HGraph.Persistent
+import Data.Graph.HGraph.TH
 
 db :: SqlPersistT (LoggingT (ResourceT IO)) a -> IO ()
 db actions = runResourceT $ runConn $ actions >> transactionUndo
@@ -106,30 +107,8 @@ instance Arbitrary Foo where
 -- However, if we do, any graphs with a missing instance match this instance and then fail via
 -- a context reduction stack overflow which is pretty ugly.
 
-instance ToBase SelfRef where
-  type HasBase SelfRef = 'True
-  type Base SelfRef = SelfRef
-  base = id
-instance ToBase District where
-  type HasBase District = 'True
-  type Base District = District
-  base = id
-instance ToBase School where
-  type HasBase School = 'True
-  type Base School = School
-  base = id
-instance ToBase Student where
-  type HasBase Student = 'True
-  type Base Student = Student
-  base = id
-instance ToBase Teacher where
-  type HasBase Teacher = 'True
-  type Base Teacher = Teacher
-  base = id
-instance ToBase Foo where
-  type HasBase Foo = 'True
-  type Base Foo = Foo
-  base = id
+declareBases [''SelfRef, ''District, ''School, ''Student, ''Teacher, ''Foo]
+
 type instance XX Text = Text
 
 instance SelfRef `PointsAt` Entity SelfRef

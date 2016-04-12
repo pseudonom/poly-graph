@@ -132,7 +132,7 @@ insertGraph' ::
   HGraph (UnwrapAll b :: [(*, k, [k])]) -> ReaderT backend m (HGraph (b :: [(*, k, [k])]))
 insertGraph' = insertGraph (Proxy :: Proxy ('[] :: [*]))
 
-class InsertGraph (ps :: [*]) (a :: [(*, k, [k])]) (b :: [(*, k, [k])]) (backend :: *) where -- | a -> b, b -> a, a -> backend , b -> backend where
+class InsertGraph (ps :: [*]) (a :: [(*, k, [k])]) (b :: [(*, k, [k])]) (backend :: *) | a -> b, b -> a, a -> backend , b -> backend where
   insertGraph ::
     (Monad m, MonadIO m, PersistStore backend, UnwrapAll b ~ a) =>
     Proxy ps ->
