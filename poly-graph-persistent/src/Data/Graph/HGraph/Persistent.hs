@@ -46,23 +46,23 @@ instance
   a `FieldPointsAt` b where
   fieldPointsAt = const
 
-type family TypeError (msg :: Symbol) (a :: k) :: j
+type family TypeError (b :: k) (msg :: Symbol) (a :: k) :: j
 
 instance
   {-# OVERLAPPING #-}
   (Show (Key a)) =>
-  Nullify (Maybe (Key a)) where
-  nullify a = trace ("Nullify " ++ show a) Nothing
+  Nullify og (Maybe (Key a)) where
+  nullify Proxy a = trace ("Nullify " ++ show a) Nothing
 instance
   {-# OVERLAPPING #-}
-  (Show (Key a), TypeError "Missing pointer to" a) =>
-  Nullify (Key a) where
-  nullify a = trace ("Preserve2 " ++ show a) a
+  (Show (Key a), TypeError og "Missing pointer to" a) =>
+  Nullify og (Key a) where
+  nullify Proxy a = trace ("Preserve2 " ++ show a) a
 instance
   {-# OVERLAPPABLE #-}
   (Show a) =>
-  Nullify a where
-  nullify a = trace ("Preserve " ++ show a) a
+  Nullify og a where
+  nullify Proxy a = trace ("Preserve " ++ show a) a
 
 data Entity'
 
@@ -133,7 +133,7 @@ class InsertGraph a b backend where -- | a -> b, b -> a, a -> backend , b -> bac
 
 -- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
 instance
-  (InsertElement a b is backend, Show a, HasEot a, GNullify (Eot a)) =>
+  (InsertElement a b is backend, Show a, HasEot a, GNullify a (Eot a)) =>
   InsertGraph '[ '(a, i, is)] '[ '(b, i, is)] backend where
   insertGraph (a `Cons` Nil) = do
     e <- insertElement a
@@ -142,7 +142,7 @@ instance
 -- | HGraph recursive case
 instance
   ( (i `Member` (e ': f)) ~ 'UniqueName
-  , Node i '( '[], is) a `PointsAtR` HGraph (e ': f)
+  , Node i is a `PointsAtR` HGraph (e ': f)
   , InsertGraph (b ': c) (e ': f) backend
   , InsertElement a d is backend
   ) =>
@@ -157,22 +157,25 @@ instance
 class InsertElement a b is backend | a -> b, b -> a, a -> backend, b -> backend where
   insertElement ::
     (Monad m, MonadIO m, PersistStore backend, Unwrap b ~ a) =>
-    Node i '( '[], is) a -> ReaderT backend m (Node j js b)
+    Node i is a -> ReaderT backend m (Node j js b)
 instance
-  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, HasEot a, GNullify (Eot a)) =>
+  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, HasEot a, GNullify a (Eot a)) =>
   InsertElement a (Entity a) '[] backend where
   insertElement (Node a) = Node . flip Entity a' <$> insert a'
-    where a' = fromEot . gNullify . toEot $ a
+    where a' = fromEot . gNullify (Proxy :: Proxy a) . toEot $ a
 instance
   (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a) =>
   InsertElement a (Entity a) (i ': is) backend where
   insertElement (Node a) = Node . flip Entity a <$> insert a
 instance
-  (Show (f a), HasEot a, GNullify (Eot a), PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, Traversable f, Applicative f) =>
+  ( Show (f a), HasEot a, GNullify a (Eot a)
+  , PersistEntityBackend a ~ BaseBackend backend, PersistEntity a
+  , Traversable f, Applicative f
+  ) =>
   InsertElement (f a) (f (Entity a)) '[] backend where
   insertElement (Node fa) = do
     trace ("inserting " ++ show fa) (pure ())
-    let fa' = fromEot . gNullify . toEot <$> fa
+    let fa' = fromEot . gNullify (Proxy :: Proxy a) . toEot <$> fa
     fid <- traverse insert fa'
     pure $ Node (Entity <$> fid <*> fa')
 instance

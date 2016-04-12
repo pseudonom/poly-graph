@@ -19,7 +19,7 @@ import Data.Graph.HGraph
 
 -- | The underlying HGraph uses @Node@s.
 -- This instance unwraps @Node@s and tries to find a way to point one node body at the other.
-instance {-# OVERLAPPING #-} (a `DispatchOnTyCons` b) => Node i (e (j ': is)) a `PointsAt` Node j (f js) b where
+instance {-# OVERLAPPING #-} (a `DispatchOnTyCons` b) => Node i (j ': is) a `PointsAt` Node j js b where
   Node a `pointsAt` Node b = Node $ a `pointsAtDispatcher` b
 
 -- | Using overlapping instances in @PointsAtInternal@ quickly turns into a hot mess.

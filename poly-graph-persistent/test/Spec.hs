@@ -114,10 +114,22 @@ instance ToBase District where
   type HasBase District = 'True
   type Base District = District
   base = id
-instance ToBase Teacher where
-  type HasBase Teacher = 'True
-  type Base Teacher = Teacher
-  base = id
+-- instance ToBase School where
+--   type HasBase School = 'True
+--   type Base School = School
+--   base = id
+-- instance ToBase Student where
+--   type HasBase Student = 'True
+--   type Base Student = Student
+--   base = id
+-- instance ToBase Teacher where
+--   type HasBase Teacher = 'True
+--   type Base Teacher = Teacher
+--   base = id
+-- instance ToBase Foo where
+--   type HasBase Foo = 'True
+--   type Base Foo = Foo
+--   base = id
 
 instance SelfRef `PointsAt` Entity SelfRef
 instance SelfRef `PointsAt` Maybe (Entity SelfRef)

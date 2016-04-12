@@ -65,28 +65,28 @@ class FieldPointsAt a b where
 infixr 5 :<
 pattern a :< b <- Node a `Cons` b
 
-class Nullify a where
-  nullify :: a -> a
+class Nullify og a where
+  nullify :: Proxy og -> a -> a
 
-class GNullify a where
-  gNullify :: a -> a
-instance (Show a, Show b, GNullify a, GNullify b) => GNullify (Either a b) where
-  gNullify l@(Left a) = trace (show l) $ Left $ gNullify a
-  gNullify r@(Right b) = trace (show r) $ Right $ gNullify b
-instance (Show a, Show b, Nullify a, GNullify b) => GNullify (a, b) where
-  gNullify (a, b) = trace (show (a, b)) $ (nullify a, gNullify b)
-instance GNullify () where
-  gNullify _ = ()
-instance GNullify Void where
+class GNullify og a where
+  gNullify :: Proxy og -> a -> a
+instance (Show a, Show b, GNullify og a, GNullify og b) => GNullify og (Either a b) where
+  gNullify p l@(Left a) = trace (show l) $ Left $ gNullify p a
+  gNullify p r@(Right b) = trace (show r) $ Right $ gNullify p b
+instance (Show a, Show b, Nullify og a, GNullify og b) => GNullify og (a, b) where
+  gNullify p (a, b) = trace (show (a, b)) $ (nullify p a, gNullify p b)
+instance GNullify og () where
+  gNullify Proxy _ = ()
+instance GNullify og Void where
   gNullify _ = error "impossible"
 
 class a `PointsAtR` b where
   pointsAtR :: a -> b -> a
-instance (PointsAtRInternal (HasBase a) a b) => a `PointsAtR` b where
-  pointsAtR = pointsAtRInternal (Proxy :: Proxy (HasBase a))
+instance (PointsAtRInternal (HasBase a) is (Node i is a) b) => Node i is a `PointsAtR` b where
+  pointsAtR = pointsAtRInternal (Proxy :: Proxy (HasBase a)) (Proxy :: Proxy is)
 
-class PointsAtRInternal (hasBase :: Bool) a b where
-  pointsAtRInternal :: Proxy hasBase -> a -> b -> a
+class PointsAtRInternal (hasBase :: Bool) og a b where
+  pointsAtRInternal :: Proxy hasBase -> Proxy og -> a -> b -> a
 
 type Never = Proxy
 type Always = Identity
@@ -97,6 +97,9 @@ pattern Never = Proxy
 _Always :: Lens' (Always a) a
 _Always pure' (Always a) = Always <$> pure' a
 
+_Never :: Lens' (Never a) a
+_Never pure' Never = const Never <$> (pure' undefined)
+
 instance (ToBase a) => ToBase (Maybe a) where
   type HasBase (Maybe a) = HasBase (Base (Maybe a))
   type Base (Maybe a) = Base a
@@ -106,6 +109,11 @@ instance (ToBase a) => ToBase (Always a) where
   type HasBase (Always a) = HasBase (Base (Always a))
   type Base (Always a) = Base a
   base = _Always . base
+
+instance (ToBase a) => ToBase (Never a) where
+  type HasBase (Never a) = HasBase (Base (Never a))
+  type Base (Never a) = Base a
+  base = _Never . base
 
 class ToBase a where
   type HasBase a :: Bool
@@ -120,39 +128,41 @@ instance (ToBase a) => ToBase (Node i is a) where
   type Base (Node i is a) = Base a
   base = _Node . base
 
+-- | Never pointed at anything
 instance
-  (ToBase b, Base b ~ a, HasEot a, GNullify (Eot a)) =>
-  PointsAtRInternal 'True (Node i '( '[], '[]) b) (HGraph c) where
-  pointsAtRInternal Proxy (Node a) _ = Node $ a & base %~ fromEot . gNullify . toEot
+  {-# OVERLAPPING #-}
+  (ToBase a, Base a ~ b, HasEot b, GNullify a (Eot b)) =>
+  PointsAtRInternal 'True '[] (Node i is a) (HGraph c) where
+  pointsAtRInternal Proxy Proxy n _ = n & _Node . base %~ fromEot . gNullify (Proxy :: Proxy a) . toEot
 instance
-  (HasEot a, GNullify (Eot a)) =>
-  PointsAtRInternal 'False (Node i '( '[], '[]) a) (HGraph c) where
-  pointsAtRInternal Proxy (Node a) _ = Node . fromEot . gNullify . toEot $ a
+  {-# OVERLAPPING #-}
+  (HasEot a, GNullify a (Eot a)) =>
+  PointsAtRInternal 'False '[] (Node i is a) (HGraph c) where
+  pointsAtRInternal Proxy Proxy n _ = n & _Node %~ fromEot . gNullify (Proxy :: Proxy a) . toEot
 
-instance PointsAtRInternal bool (Node i '( '[], '[]) (Never a)) (HGraph b) where
-  pointsAtRInternal Proxy = const
--- | Points at nothing. Used to point at something. Preserve prior linking.
-instance PointsAtRInternal bool (Node i '( '[], '[]) a) (HGraph b) where
-  pointsAtRInternal Proxy = const
+-- | Base case. Used to point at things but have already handled all pointers.
+instance
+  PointsAtRInternal bool (j ': js) (Node i '[] a) (HGraph b) where
+  pointsAtRInternal Proxy Proxy a _ = a
 -- | Points at wrong thing
 instance
-  (Node i '( '[], (j ': js)) a `PointsAtR` HGraph c) =>
-  PointsAtRInternal bool (Node i '( '[], (j ': js)) a) (HGraph ('(b, k, ls) ': c)) where
-  pointsAtRInternal Proxy a (Cons _ c) = a `pointsAtR` c
+  (Node i (j ': js) a `PointsAtR` HGraph c) =>
+  PointsAtRInternal bool og (Node i (j ': js) a) (HGraph ('(b, k, ls) ': c)) where
+  pointsAtRInternal Proxy Proxy a (Cons _ c) = a `pointsAtR` c
 -- | Adjacent
 instance {-# OVERLAPPING #-}
-  ( Node i '( '[],  (j ': js)) a `PointsAt` Node j '( '[], ks) b
-  , Node i '( '[],  js) a `PointsAtR` (HGraph ('(b, j, ks) ': c))
+  ( Node i (j ': js) a `PointsAt` Node j ks b
+  ,PointsAtRInternal bool og (Node i js a) (HGraph ('(b, j, ks) ': c))
   ) =>
-  PointsAtRInternal bool (Node i '( '[], (j ': js)) a) (HGraph ('(b, j, ks) ': c)) where
-  pointsAtRInternal Proxy a r@(Cons b _) = retag $ a' `pointsAtR` r
+  PointsAtRInternal bool og (Node i (j ': js) a) (HGraph ('(b, j, ks) ': c)) where
+  pointsAtRInternal base og a r@(Cons b _) = retag $ pointsAtRInternal base og a' r
     where
-      a' :: Node i '( '[], js) a
+      a' :: Node i js a
       a' = retag $ a `pointsAt` b
 
 infixr 5 ~>
 (~>) ::
-  ((i `Member` b) ~ 'UniqueName, Node i '( '[], is) a `PointsAtR` HGraph b) =>
+  ((i `Member` b) ~ 'UniqueName, Node i is a `PointsAtR` HGraph b) =>
   a -> HGraph b -> HGraph ('(a, i, is) ': b)
 a ~> b = (Node a `pointsAtR` b) `Cons` b
 
@@ -166,7 +176,7 @@ data RawGraph a = RawGraph { unRawGraph :: HGraph a }
 instance Arbitrary (RawGraph '[]) where
   arbitrary = pure $ RawGraph Nil
 instance
-  ((i `Member` b) ~ 'UniqueName, Arbitrary (Node i '( '[], is) a), Arbitrary (RawGraph b)) =>
+  ((i `Member` b) ~ 'UniqueName, Arbitrary (Node i is a), Arbitrary (RawGraph b)) =>
   Arbitrary (RawGraph ('(a, i, is) ': b)) where
   arbitrary = do
     RawGraph <$> (Cons <$> arbitrary <*> (unRawGraph <$> arbitrary))
@@ -174,8 +184,8 @@ instance
 instance Arbitrary (HGraph '[]) where
   arbitrary = pure Nil
 instance
-  ( (i `Member` b) ~ 'UniqueName, Node i '( '[], is) a `PointsAtR` HGraph b
-  , Arbitrary (Node i '( '[], is) a), Arbitrary (HGraph b)
+  ( (i `Member` b) ~ 'UniqueName, Node i is a `PointsAtR` HGraph b
+  , Arbitrary (Node i is a), Arbitrary (HGraph b)
   ) =>
   Arbitrary (HGraph ('(a, i, is) ': b)) where
   arbitrary = do
