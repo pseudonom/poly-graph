@@ -13,6 +13,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 -- Pattern synonyms and exhaustivity checking don't work well together
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Graph.HGraph
   ( module Data.Graph.HGraph
@@ -24,11 +25,9 @@ module Data.Graph.HGraph
   ) where
 
 import Control.Lens hiding (_head, _tail)
-import Data.Functor.Identity
 import Data.Type.Equality
 import Data.Proxy
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
-import GHC.TypeLits
 import Test.QuickCheck.Arbitrary
 
 import Data.Graph.HGraph.Internal as X hiding (Lens')
@@ -106,8 +105,8 @@ instance (Nullify pointedFrom a) => NullifyRecurse (pointedFrom :: *) ('[] :: [*
 class GNullify (og :: *) (ps :: [*]) (a :: *) where
   gNullify :: Proxy og -> Proxy ps -> a -> a
 instance (GNullify og ps a, GNullify og ps b) => GNullify og ps (Either a b) where
-  gNullify og ps l@(Left a) = Left $ gNullify og ps a
-  gNullify og ps r@(Right b) = Right $ gNullify og ps b
+  gNullify og ps (Left a) = Left $ gNullify og ps a
+  gNullify og ps (Right b) = Right $ gNullify og ps b
 instance (NullifyRecurse og ps a, GNullify og ps b) => GNullify og ps (a, b) where
   gNullify og ps (a, b) = (nullifyRecurse og ps a, gNullify og ps b)
 instance GNullify og ps () where

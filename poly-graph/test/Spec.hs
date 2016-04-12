@@ -23,7 +23,6 @@ import GHC.Generics
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances
 import Data.Graph.HGraph.Internal (HGraph(Cons))
-import Data.Graph.HGraph.TH
 
 data Typ = Self | A | B | C
 data Node1 (self :: Typ) (other :: Typ)

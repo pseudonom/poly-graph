@@ -27,10 +27,8 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT, MonadBaseControl)
 import qualified Data.ByteString.Char8 as B8
-import Data.Maybe
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
-import Data.Type.Equality (type (==))
 import Database.Persist
 import Database.Persist.Sql
 import Database.Persist.Sqlite (withSqlitePool)

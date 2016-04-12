@@ -18,11 +18,10 @@ module Data.Graph.HGraph.Persistent where
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.IO.Class (MonadIO)
 import Data.Foldable (traverse_)
-import Data.Functor.Identity
 import Data.Proxy
 import Database.Persist
 import Database.Persist.Sql
-import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
+import Generics.Eot (Eot, HasEot)
 import GHC.TypeLits
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
