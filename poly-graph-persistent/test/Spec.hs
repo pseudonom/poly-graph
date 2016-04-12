@@ -107,9 +107,7 @@ instance Arbitrary Foo where
 -- However, if we do, any graphs with a missing instance match this instance and then fail via
 -- a context reduction stack overflow which is pretty ugly.
 
-declareBases [''SelfRef, ''District, ''School, ''Student, ''Teacher, ''Foo]
-
-type instance XX Text = Text
+declareBases [''SelfRef, ''District, ''School, ''Student, ''Teacher, ''Foo, ''Text]
 
 instance SelfRef `PointsAt` Entity SelfRef
 instance SelfRef `PointsAt` Maybe (Entity SelfRef)
@@ -135,12 +133,12 @@ main = do
         let graph' = graph & pluck (Proxy :: Proxy School) . schoolName .~ "Hello"
         liftIO $ print graph'
       -- it "doesn't type check with a dangling (non-`Maybe`) key" $ db $ do
-      --   graph <- liftIO (generate arbitrary) :: M (HGraph '[ '(Teacher, "Teacher", '[]) ])
+      --   graph <- liftIO (generate arbitrary) :: M (HGraph '[ '("Teacher", '[], Teacher) ])
       --   liftIO $ print graph
       -- it "doesn't type check with a repeated name" $ db $ do
       --   graph <-
       --     liftIO (generate arbitrary)
-      --     :: M (HGraph '[ '(Teacher, "Teacher", '["Teacher"]), '(Student, "Teacher", '[]) ])
+      --     :: M (HGraph '[ '("Teacher", '["Teacher"], Teacher), '("Teacher", '[], Student) ])
       --   liftIO $ print graph
       it "generates arbitrary entities" $ db $ do
         graph <-
@@ -153,10 +151,10 @@ main = do
           insertGraph' arbGraph
           :: M (
                HGraph
-                '[ '(Entity Foo, "F", '["S"])
-                 , '(Entity Student, "S", '["T"])
-                 , '(Entity Teacher, "T", '["Sc"])
-                 , '(Entity School, "Sc", '[])
+                '[ '("F", '["S"], Entity Foo)
+                 , '("S", '["T"], Entity Student)
+                 , '("T", '["Sc"], Entity Teacher)
+                 , '("Sc", '[], Entity School)
                  ]
                )
         liftIO $ (entGraph ^. _head . _entityVal . fooTeacherId) `shouldBe` Nothing
@@ -170,30 +168,30 @@ main = do
       it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're in the middle of the graph" $ db $ do
         arbGraph <-
           liftIO (generate arbitrary)
-          :: M (HGraph '[ '(Always (Entity SelfRef), 1, '[]), '(Maybe (Entity SelfRef), 2, '[]) ])
+          :: M (HGraph '[ '(1, '[], Always (Entity SelfRef)), '(2, '[], Maybe (Entity SelfRef)) ])
         liftIO $ (arbGraph ^? _head . _Always . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "defaults `Maybe` keys to `Nothing` during insertion when they're in the middle of the graph" $ db $ do
         entGraph <-
           insertGraph' . unRawGraph =<< liftIO (generate arbitrary)
-          :: M (HGraph '[ '(Always (Entity SelfRef), 1, '[]), '(Maybe (Entity SelfRef), 2, '[]) ])
+          :: M (HGraph '[ '(1, '[], Always (Entity SelfRef)), '(2, '[], Maybe (Entity SelfRef)) ])
         liftIO $ (entGraph ^? _head . _Always . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "works with Maybe key to plain" $ db $ do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
             :: M (
                  HGraph
-                   '[ '(SelfRef, "Plain1", '["Plain2"])
-                    , '(SelfRef, "Plain2", '["Never"])
-                    , '(Never SelfRef, "Never", '[])
+                   '[ '("Plain1", '["Plain2"], SelfRef)
+                    , '("Plain2", '["Never"], SelfRef)
+                    , '("Never", '[], Never SelfRef)
                     ]
                  )
         graph' <-
           insertGraph' graph
             :: M (
                  HGraph
-                   '[ '(Entity SelfRef, "Plain1", '["Plain2"])
-                    , '(Entity SelfRef, "Plain2", '["Never"])
-                    , '(Never (Entity SelfRef), "Never", '[])
+                   '[ '("Plain1", '["Plain2"], Entity SelfRef)
+                    , '("Plain2", '["Never"], Entity SelfRef)
+                    , '("Never", '[], Never (Entity SelfRef))
                     ]
                  )
         liftIO $
@@ -204,33 +202,31 @@ main = do
           unRawGraph <$> liftIO (generate arbitrary)
             :: M (
                  HGraph
-                   '[ '(SelfRef, "Plain1", '["Maybe1", "Always1", "Never1", "Plain2"])
-                    , '(Maybe SelfRef, "Maybe1", '["Always1", "Never1", "Plain2", "Maybe2"])
-                    , '(Always SelfRef, "Always1", '["Never1", "Plain2", "Maybe2", "Always2"])
-                    , '(Never SelfRef, "Never1", '["Plain2", "Maybe2", "Always2", "Never2"])
-                    , '(SelfRef, "Plain2", '["Never2"])
-                    , '(Maybe SelfRef, "Maybe2", '["Never2"])
-                    , '(Always SelfRef, "Always2", '["Never2"])
-                    , '(Never SelfRef, "Never2", '[])
+                   '[ '("Plain1", '["Maybe1", "Always1", "Never1", "Plain2"], SelfRef)
+                    , '("Maybe1", '["Always1", "Never1", "Plain2", "Maybe2"], Maybe SelfRef)
+                    , '("Always1", '["Never1", "Plain2", "Maybe2", "Always2"], Always SelfRef)
+                    , '("Never1", '["Plain2", "Maybe2", "Always2", "Never2"], Never SelfRef)
+                    , '("Plain2", '["Never2"], SelfRef)
+                    , '("Maybe2", '["Never2"], Maybe SelfRef)
+                    , '("Always2", '["Never2"], Always SelfRef)
+                    , '("Never2", '[], Never SelfRef)
                     ]
                  )
-        liftIO $ print graph
         graph' <-
           insertGraph' graph
             :: M (
                  HGraph
-                   '[ '(Entity SelfRef, "Plain1", '["Maybe1", "Always1", "Never1", "Plain2"])
-                    , '(Maybe (Entity SelfRef), "Maybe1", '["Always1", "Never1", "Plain2", "Maybe2"])
-                    , '(Always (Entity SelfRef), "Always1", '["Never1", "Plain2", "Maybe2", "Always2"])
-                    , '(Never (Entity SelfRef), "Never1", '["Plain2", "Maybe2", "Always2", "Never2"])
-                    , '(Entity SelfRef, "Plain2", '["Never2"])
-                    , '(Maybe (Entity SelfRef), "Maybe2", '["Never2"])
-                    , '(Always (Entity SelfRef), "Always2", '["Never2"])
-                    , '(Never (Entity SelfRef), "Never2", '[])
+                   '[ '("Plain1", '["Maybe1", "Always1", "Never1", "Plain2"], Entity SelfRef)
+                    , '("Maybe1", '["Always1", "Never1", "Plain2", "Maybe2"], Maybe (Entity SelfRef))
+                    , '("Always1", '["Never1", "Plain2", "Maybe2", "Always2"], Always (Entity SelfRef))
+                    , '("Never1", '["Plain2", "Maybe2", "Always2", "Never2"], Never (Entity SelfRef))
+                    , '("Plain2", '["Never2"], Entity SelfRef)
+                    , '("Maybe2", '["Never2"], Maybe (Entity SelfRef))
+                    , '("Always2", '["Never2"], Always (Entity SelfRef))
+                    , '("Never2", '[], Never (Entity SelfRef))
                     ]
                  )
         liftIO $ print graph'
-
 
       it "Manual creation and insertion should produce the same results as automatic creation and insertion" $ db $ do
         void . insert $ District "bump id to prove we're doing something mildly interesting"
@@ -252,15 +248,14 @@ main = do
         (st :< te :< sc :< Always di :< Nil) <-
           insertGraph' graph
             :: M (
-                 HGraph
-                   '[ Ty (Entity Student) '[Entity Teacher]
-                    , Ty (Entity Teacher) '[Entity School]
-                    , Ty (Entity School) '[Always (Entity District)]
-                    , Ty (Always (Entity District)) '[]
+                 Line
+                   '[ Entity Student
+                    , Entity Teacher
+                    , Entity School
+                    , Always (Entity District)
                     ]
                  )
 
         let manualTree = (Entity stId stB, Entity teId teB, Entity scId scB, Entity diId diB)
         let autoTree = (st, te, sc, di)
         liftIO $ autoTree `shouldBe` manualTree
-        liftIO $ print autoTree

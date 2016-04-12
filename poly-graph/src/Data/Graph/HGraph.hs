@@ -27,13 +27,13 @@ import Control.Lens hiding (_head, _tail)
 import Data.Functor.Identity
 import Data.Type.Equality
 import Data.Proxy
-import Debug.Trace
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import GHC.TypeLits
 import Test.QuickCheck.Arbitrary
 
 import Data.Graph.HGraph.Internal as X hiding (Lens')
 
+-- | This class specifies how to link two types to reflect their type level linkage in an @HGraph@.
 infixr 5 `PointsAt`
 class a `PointsAt` b where
   infixr 5 `pointsAt`
@@ -41,6 +41,8 @@ class a `PointsAt` b where
   default pointsAt :: (HasEot a, Eot a `GPointsAt` b) => a -> b -> a
   pointsAt a b = fromEot $ toEot a `gPointsAt` b
 
+-- | This class provides the @Generic@ default implementation of @PointsAt@.
+-- We provide the basic recursive structure here to save the end user some boilerplate.
 class a `GPointsAt` b where
   infixr 5 `gPointsAt`
   gPointsAt :: a -> b -> a
@@ -58,6 +60,7 @@ instance GPointsAt () a where
 instance GPointsAt Void a where
   gPointsAt _ _ = error "impossible"
 
+-- | This defines the actual interesting behavior happens in our @Generic@ implementation of @PointsAt@.
 class FieldPointsAt a b where
   fieldPointsAt :: a -> b -> a
 
@@ -66,58 +69,68 @@ class FieldPointsAt a b where
 infixr 5 :<
 pattern a :< b <- Node a `Cons` b
 
-class Nullify (og :: *) (a :: *) where
-  nullify :: Proxy og -> a -> a
+-- | We don't strictly need @pointedFrom@ but it makes our errors much more helpful.
+class Nullify (pointedFrom :: *) (pointedTo :: *) where
+  nullify :: Proxy pointedFrom -> pointedTo -> pointedTo
 
-type family XX (a :: *) :: *
-type family YY (a :: *) :: *
-type instance XX (Maybe a) = XX a
-type instance YY (Always a) = YY a
-type instance YY (Never a) = YY a
-type instance YY (Maybe a) = YY a
+-- | Handles early escape from @NullifyRecurse@.
+class EscapeNullify (pointedFrom :: *) (completedLinkages :: [*]) (match :: Bool) (a :: *) where
+  escapeNullify :: Proxy pointedFrom -> Proxy completedLinkages -> Proxy match -> a -> a
+-- | If we previously set this @Nullable@, leave it alone and terminate recursion.
+instance EscapeNullify pointedFrom completedLinkages 'True a where
+  escapeNullify Proxy Proxy Proxy = id
+-- | If we didn't previously set this @Nullable@, @nullify@ is still a possibility.
+-- Continue the recursion to see if we do actually get to @nullify@.
+instance
+  (Nullify pointedFrom a, NullifyRecurse pointedFrom completedLinkages a) =>
+  EscapeNullify pointedFrom completedLinkages 'False a where
+  escapeNullify pointedFrom completedLinkages Proxy = nullifyRecurse pointedFrom completedLinkages
 
-class NullifyW (og :: *) (ps :: [*]) (b :: Bool) (a :: *) where
-  nullifyW :: Proxy og -> Proxy ps -> Proxy b -> a -> a
--- | If we already set this key, leave it alone
-instance NullifyW og ps 'True a where
-  nullifyW Proxy Proxy Proxy = id
-instance (Nullify og a, NullifyW1 og ps a) => NullifyW og ps 'False a where
-  nullifyW og ps Proxy = nullifyW1 og ps
+-- | Uses the list of completed linkages to determine if this key should be nullable.
+-- For example, if we've already done @A `PointsAt` Entity B@, we shouldn't wipe @A@'s key to @B@.
+class NullifyRecurse (pointedFrom :: *) (completedLinkages :: [*]) (a :: *) where
+  nullifyRecurse :: Proxy pointedFrom -> Proxy completedLinkages -> a -> a
+-- | There's at least one more linkage left to examine.
+-- Test if the candidate @Nullable@ equals the current link and call the corresponding @EscapeNullify@.
+instance
+  ((Base a == Base link) ~ match, EscapeNullify pointedFrom completedLinkages match a) =>
+  NullifyRecurse (pointedFrom :: *) ((link ': completedLinkages) :: [*]) (a :: *) where
+  nullifyRecurse p Proxy = escapeNullify p (Proxy :: Proxy completedLinkages) (Proxy :: Proxy match)
+-- | If we've made it this far, none of our completed linkages matched the candidate @Nullable@.
+-- We're free to @nullify@.
+instance (Nullify pointedFrom a) => NullifyRecurse (pointedFrom :: *) ('[] :: [*]) (a :: *) where
+  nullifyRecurse p Proxy = nullify p
 
-class NullifyW1 (og :: *) (ps :: [*]) (a :: *) where
-  nullifyW1 :: Proxy og -> Proxy ps -> a -> a
-instance (Nullify og a) => NullifyW1 (og :: *) ('[] :: [*]) (a :: *) where
-  nullifyW1 p Proxy = nullify p
-instance ((XX a == YY p) ~ b, NullifyW og ps b a) => NullifyW1 (og :: *) ((p ': ps) :: [*]) (a :: *) where
-  nullifyW1 p Proxy = nullifyW p (Proxy :: Proxy ps) (Proxy :: Proxy b)
-
+-- | This provides the basic structure of @eot@ recursion so end users don't have to worry about it.
+-- Users only have to define the @Nullify@ instances.
 class GNullify (og :: *) (ps :: [*]) (a :: *) where
   gNullify :: Proxy og -> Proxy ps -> a -> a
-instance (Show a, Show b, GNullify og ps a, GNullify og ps b) => GNullify og ps (Either a b) where
-  gNullify og ps l@(Left a) = trace (show l) $ Left $ gNullify og ps a
-  gNullify og ps r@(Right b) = trace (show r) $ Right $ gNullify og ps b
-instance (Show a, Show b, NullifyW1 og ps a, GNullify og ps b) => GNullify og ps (a, b) where
-  gNullify og ps (a, b) = trace (show (a, b)) $ (nullifyW1 og ps a, gNullify og ps b)
+instance (GNullify og ps a, GNullify og ps b) => GNullify og ps (Either a b) where
+  gNullify og ps l@(Left a) = Left $ gNullify og ps a
+  gNullify og ps r@(Right b) = Right $ gNullify og ps b
+instance (NullifyRecurse og ps a, GNullify og ps b) => GNullify og ps (a, b) where
+  gNullify og ps (a, b) = (nullifyRecurse og ps a, gNullify og ps b)
 instance GNullify og ps () where
   gNullify Proxy Proxy () = ()
 instance GNullify og ps Void where
   gNullify = error "impossible"
 
-class a `PointsAtR` b where
-  pointsAtR :: a -> b -> a
-instance (PointsAtRInternal (HasBase a) is '[] i is a b) => Node i is a `PointsAtR` HGraph b where
-  pointsAtR = pointsAtRInternal (Proxy :: Proxy (HasBase a)) (Proxy :: Proxy is) (Proxy :: Proxy '[])
+-- | You'd think this is a totally pointless type class and you could just lift @pointsAtR@ to a top-level function.
+-- For some reason you can't. GHC complains about ambiguous type variables if you do.
+class PointsAtR (i :: k) (is :: [k]) a (b :: [(k, [k], *)]) where
+  pointsAtR :: Node i is a -> HGraph b -> Node i is a
+instance (PointsAtRInternal is '[] i is a graph) => PointsAtR i is a graph where
+  pointsAtR = pointsAtRInternal (Proxy :: Proxy is) (Proxy :: Proxy '[])
 
 class PointsAtRInternal
-  (hasBase :: Bool)
-  (og :: [k])
-  (ps :: [*])
+  (originalLinks :: [k])
+  (typesLinked :: [*])
   (i :: k)
-  (is :: [k])
+  (remainingLinks :: [k])
   (a :: *)
-  (b :: [(*, k, [k])])
+  (graph :: [(k, [k], *)])
   where
-  pointsAtRInternal :: Proxy hasBase -> Proxy og -> Proxy ps -> Node i is a -> HGraph b -> Node i is a
+  pointsAtRInternal :: Proxy originalLinks -> Proxy typesLinked -> Node i remainingLinks a -> HGraph graph -> Node i remainingLinks a
 
 type Never = Proxy
 type Always = Identity
@@ -131,72 +144,58 @@ _Always pure' (Always a) = Always <$> pure' a
 _Never :: Lens' (Never a) a
 _Never pure' Never = const Never <$> (pure' undefined)
 
+-- | We split out the type family because we can't create the optic for some types. For example, @Lens' (Key a) a@.
+type family Base (a :: *) :: *
+
+type instance Base (Maybe a) = Base a
 instance (ToBase a) => ToBase (Maybe a) where
-  type HasBase (Maybe a) = HasBase (Base (Maybe a))
-  type Base (Maybe a) = Base a
   base = _Just . base
 
+type instance Base (Always a) = Base a
 instance (ToBase a) => ToBase (Always a) where
-  type HasBase (Always a) = HasBase (Base (Always a))
-  type Base (Always a) = Base a
   base = _Always . base
 
+type instance Base (Never a) = Base a
 instance (ToBase a) => ToBase (Never a) where
-  type HasBase (Never a) = HasBase (Base (Never a))
-  type Base (Never a) = Base a
   base = _Never . base
 
 class ToBase a where
-  type HasBase a :: Bool
-  type Base a
   base :: Traversal' a (Base a)
 
 _Node :: Lens' (Node i is a) a
 _Node pure' (Node a) = Node <$> pure' a
 
+type instance Base (Node i is a) = Base a
 instance (ToBase a) => ToBase (Node i is a) where
-  type HasBase (Node i is a) = HasBase (Base (Node i is a))
-  type Base (Node i is a) = Base a
   base = _Node . base
 
--- | Never pointed at anything
-instance
-  {-# OVERLAPPING #-}
-  (ToBase a, Base a ~ b, HasEot b, GNullify a '[] (Eot b)) =>
-  PointsAtRInternal 'True '[] '[] i is a c where
-  pointsAtRInternal Proxy Proxy Proxy n _ =
-    n & _Node . base %~ fromEot . gNullify (Proxy :: Proxy a) (Proxy :: Proxy '[]) . toEot
--- instance
---   {-# OVERLAPPING #-}
---   (HasEot a, GNullify a '[] (Eot a)) =>
---   PointsAtRInternal 'False '[] '[] i is a c where
---   pointsAtRInternal Proxy Proxy Proxy n _ = n & _Node %~ fromEot . gNullify (Proxy :: Proxy a) (Proxy :: Proxy '[]) . toEot
+-- | Base case. Doesn't point at anything.
+instance (ToBase a, Base a ~ b, HasEot b, GNullify a typesLinked (Eot b)) =>
+  PointsAtRInternal originalLinks typesLinked i '[] a graph where
+  pointsAtRInternal Proxy Proxy n _ =
+    n & _Node . base %~ fromEot . gNullify (Proxy :: Proxy a) (Proxy :: Proxy typesLinked) . toEot
 
--- | Base case. Used to point at things but have already handled all pointers.
-instance (ToBase a, Base a ~ b, HasEot b, GNullify a ps (Eot b)) =>
-  PointsAtRInternal bool (j ': js) ps i '[] a c where
-  pointsAtRInternal Proxy Proxy Proxy n _ =
-    n & _Node . base %~ fromEot . gNullify (Proxy :: Proxy a) (Proxy :: Proxy ps) . toEot
 -- | Points at wrong thing
 instance
-  (Node i (j ': js) a `PointsAtR` HGraph c) =>
-  PointsAtRInternal bool og ps i (j ': js) a ('(b, k, ls) ': c) where
-  pointsAtRInternal Proxy Proxy Proxy a (Cons _ c) = a `pointsAtR` c
+  (PointsAtRInternal originalLinks typesLinked i (link ': remainingLinks) a graph) =>
+  PointsAtRInternal originalLinks typesLinked i (link ': remainingLinks) a ('(j, js, b) ': graph) where
+  pointsAtRInternal ol tl a (Cons _ c) = pointsAtRInternal ol tl a c
+
 -- | Adjacent
 instance {-# OVERLAPPING #-}
-  ( Node i (j ': js) a `PointsAt` Node j ks b
-  , PointsAtRInternal bool og (b ': ps) i js a ('(b, j, ks) ': c)
+  ( Node i (link ': remainingLinks) a `PointsAt` Node link js b
+  , PointsAtRInternal originalLinks (b ': typesLinked) i remainingLinks a c
   ) =>
-  PointsAtRInternal bool og ps i (j ': js) a ('(b, j, ks) ': c) where
-  pointsAtRInternal base og Proxy a r@(Cons b _) = retag $ pointsAtRInternal base og (Proxy :: Proxy (b ': ps)) a' r
+  PointsAtRInternal originalLinks typesLinked i (link ': remainingLinks) a ('(link, js, b) ': c) where
+  pointsAtRInternal ol Proxy a (Cons b c) = retag $ pointsAtRInternal ol (Proxy :: Proxy (b ': typesLinked)) a' c
     where
-      a' :: Node i js a
+      a' :: Node i remainingLinks a
       a' = retag $ a `pointsAt` b
 
 infixr 5 ~>
 (~>) ::
-  ((i `Member` b) ~ 'UniqueName, Node i is a `PointsAtR` HGraph b) =>
-  a -> HGraph b -> HGraph ('(a, i, is) ': b)
+  ((i `Member` b) ~ 'UniqueName, PointsAtRInternal is '[] i is a b) =>
+  a -> HGraph b -> HGraph ('(i, is, a) ': b)
 a ~> b = (Node a `pointsAtR` b) `Cons` b
 
 -- @RawGraph@ is required because, without it, we have to provide no-op @PointsAt@ instances for
@@ -210,33 +209,36 @@ instance Arbitrary (RawGraph '[]) where
   arbitrary = pure $ RawGraph Nil
 instance
   ((i `Member` b) ~ 'UniqueName, Arbitrary (Node i is a), Arbitrary (RawGraph b)) =>
-  Arbitrary (RawGraph ('(a, i, is) ': b)) where
+  Arbitrary (RawGraph ('(i, is, a) ': b)) where
   arbitrary = do
     RawGraph <$> (Cons <$> arbitrary <*> (unRawGraph <$> arbitrary))
 
 instance Arbitrary (HGraph '[]) where
   arbitrary = pure Nil
 instance
-  ( (i `Member` b) ~ 'UniqueName, Node i is a `PointsAtR` HGraph b
+  ( (i `Member` b) ~ 'UniqueName
+  , PointsAtRInternal is '[] i is a b
   , Arbitrary (Node i is a), Arbitrary (HGraph b)
   ) =>
-  Arbitrary (HGraph ('(a, i, is) ': b)) where
+  Arbitrary (HGraph ('(i, is, a) ': b)) where
   arbitrary = do
     b <- arbitrary
     a <- arbitrary
     pure $ (a `pointsAtR` b) `Cons` b
 
+
 class Pluck name a b | name a -> b where
   pluck :: Proxy name -> Lens' (HGraph a) b
-instance {-# OVERLAPPING #-} Pluck name ('(b, name, is) ': c) b where
+instance {-# OVERLAPPING #-} Pluck name ('(name, is, b) ': c) b where
   pluck Proxy = _head
-instance (Pluck name d b) => Pluck name ('(c, otherName, is) ': d) b where
+instance (Pluck name d b) => Pluck name ('(otherName, is, c) ': d) b where
   pluck p = _tail . pluck p
+
 
 type Line as = HGraph (Line' as)
 
-type family Line' (as :: [k]) :: [(k, k, [k])] where
+type family Line' (as :: [*]) :: [(*, [*], *)] where
   Line' '[k] = '[Ty k '[]]
   Line' (k ': l ': m) = Ty k '[l] ': Line' (l ': m)
 
-type Ty a b = '(a, a, b)
+type Ty a b = '(a, b, a)

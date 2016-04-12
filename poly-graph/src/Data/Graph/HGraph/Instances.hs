@@ -29,108 +29,73 @@ instance {-# OVERLAPPING #-} (a `DispatchOnTyCons` b) => Node i (j ': is) a `Poi
 -- is not of the form @f b@ is very useful.
 class DispatchOnTyCons a b where
   pointsAtDispatcher :: a -> b -> a
--- | Both the left and right side of `PointsAt` are of the form @f a@ (e.g. @Maybe Int@ and not @Int@).
+-- | The left side is of the form @f a@.
 instance
   {-# OVERLAPPING #-}
-  ( lf ~ HandleLeft (TyConType f)
-  , rf ~ NormalizedCon (g b)
-  , PointsAtInternal lf rf (f a) (g b)
-  ) =>
-  DispatchOnTyCons (f a) (g b) where
-  pointsAtDispatcher = pointsAtInternal (Proxy :: Proxy lf) (Proxy :: Proxy rf)
--- | Only the right side is of the form @f a@.
-instance
-  {-# OVERLAPPING #-}
-  (rf ~ NormalizedCon (g b), PointsAtInternal NoTyCon rf a (g b)) =>
-  DispatchOnTyCons a (g b) where
-  pointsAtDispatcher = pointsAtInternal (Proxy :: Proxy NoTyCon) (Proxy :: Proxy rf)
--- | Only the left side is of the form @f a@.
-instance
-  {-# OVERLAPPING #-}
-  (lf ~ HandleLeft (TyConType f)
-  , PointsAtInternal lf NoTyCon (f a) b
+  (lf ~ HandleLeft f
+  , PointsAtInternal lf (f a) b
   ) =>
   DispatchOnTyCons (f a) b where
-  pointsAtDispatcher = pointsAtInternal (Proxy :: Proxy lf) (Proxy :: Proxy NoTyCon)
--- | Neither side is higher kinded.
+  pointsAtDispatcher = pointsAtInternal (Proxy :: Proxy lf)
+-- | The left hand side isn't higher kinded.
 instance
-  (PointsAtInternal NoTyCon NoTyCon a b) =>
+  (PointsAtInternal NoTyCon a b) =>
   DispatchOnTyCons a b where
-  pointsAtDispatcher = pointsAtInternal (Proxy :: Proxy NoTyCon) (Proxy :: Proxy NoTyCon)
+  pointsAtDispatcher = pointsAtInternal (Proxy :: Proxy NoTyCon)
 
 data NoTyCon
-data Normalizable
 data SomeFunctor
-data Always'
 data Never'
-data Maybe'
-data List
-
--- We need this family to be open so we can extend the @PointsAtInternal@
--- machinery to work with other type constructors like @Entity@.
-type family TyConType (f :: * -> *) :: *
-type instance TyConType Always = Always'
-type instance TyConType Never = Never'
-type instance TyConType Maybe = Maybe'
-type instance TyConType [] = List
 
 -- | Collapsing some of the functors on the left hand side of @PointsAt@ into @SomeFunctor@
 -- saves us from defining some duplicative instances.
-type family HandleLeft f
-type instance HandleLeft Never' = Never'
-type instance HandleLeft Always' = SomeFunctor
-type instance HandleLeft Maybe' = SomeFunctor
-type instance HandleLeft List = SomeFunctor
+type family HandleLeft (f :: * -> *) :: *
+type instance HandleLeft Never = Never'
+type instance HandleLeft Always = SomeFunctor
+type instance HandleLeft Maybe = SomeFunctor
+type instance HandleLeft [] = SomeFunctor
 
 -- | Helpers that automatically provide certain additional @PointsAt@ instances
 -- in terms of a few base @instances@.
-class PointsAtInternal leftTyCon rightTyCon a b where
-  pointsAtInternal :: Proxy leftTyCon -> Proxy rightTyCon -> a -> b -> a
+class PointsAtInternal leftTyCon a b where
+  pointsAtInternal :: Proxy leftTyCon -> a -> b -> a
 
--- | The base case. Once you reach this instance head, you must have a concretely declared instance.
--- e.g. @instance Student `PointsAt` Entity Teacher@
-instance
-  (a `PointsAt` b) =>
-  PointsAtInternal NoTyCon NoTyCon a b where
-  pointsAtInternal Proxy Proxy a b = a `pointsAt` b
-
--- | If the right functor is normalizable, normalize it and recurse.
-instance
-  (PointsAtInternal NoTyCon (NormalizedCon (c b)) a (NormalizedT (c b)), Normalize (c b)) =>
-  PointsAtInternal NoTyCon Normalizable a (c b) where
-  pointsAtInternal p Proxy a c = pointsAtInternal p (Proxy :: Proxy (NormalizedCon (c b))) a (normalize c)
+instance {-# OVERLAPPABLE #-}
+  (PointsAtInternal NoTyCon a (NormalizedT (c b)), Normalize (c b)) =>
+  PointsAtInternal NoTyCon a (c b) where
+  pointsAtInternal p a c = pointsAtInternal p a (normalize c)
 
 -- | @Never@ can point at anything without incurring any constraints because it's a no-op.
 instance
-  PointsAtInternal Never' r (Never a) b where
-  pointsAtInternal Proxy Proxy Never _ = Never
+  PointsAtInternal Never' (Never a) b where
+  pointsAtInternal Proxy Never _ = Never
 
 -- | Unless otherwise specified, functors @pointAt@ via @fmap@.
 instance
   (Functor f, a `DispatchOnTyCons` b) =>
-  PointsAtInternal SomeFunctor r (f a) b where
-  pointsAtInternal Proxy Proxy fa b = (`pointsAtDispatcher` b) <$> fa
+  PointsAtInternal SomeFunctor (f a) b where
+  pointsAtInternal Proxy fa b = (`pointsAtDispatcher` b) <$> fa
 
+-- | This class provides a generalized framework for handling multiple similar types.
+-- That is, instead of having to write a separate @PointsAtInternal@ instance for each combination of types,
+-- we can just specify a base case and how to reduce the other types to that base case.
 class Normalize a where
-  type  NormalizedT a
-  type NormalizedCon a
+  type NormalizedT a
   normalize :: a ->  NormalizedT a
-
 
 -- | A normalization group. @Always@ and @Never@ can be reduced to @Maybe@.
 instance Normalize (Always a) where
   type NormalizedT (Always a) = Maybe a
-  type NormalizedCon (Always a) = Normalizable
   normalize (Always a) = Just a
 instance Normalize (Never (a :: *)) where
   type NormalizedT (Never a) = Maybe a
-  type NormalizedCon (Never a) = Normalizable
   normalize Never = Nothing
+-- | If you define @NormalizedT a = a@, you must also define a @PointsAtInternal@ instance to handle it.
+-- If you don't, you'll just end up spinning as @pointsAtInternal@ calls itself.
 instance Normalize (Maybe a) where
   type NormalizedT (Maybe a) = Maybe a
-  type NormalizedCon (Maybe a) = Maybe'
   normalize = id
 instance
   (a `PointsAt` Maybe b) =>
-  PointsAtInternal NoTyCon Maybe' a (Maybe b) where
-  pointsAtInternal Proxy Proxy a b = a `pointsAt` b
+  PointsAtInternal NoTyCon a (Maybe b) where
+  pointsAtInternal Proxy a b = a `pointsAt` b

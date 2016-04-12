@@ -1,10 +1,14 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
@@ -13,11 +17,13 @@
 import Test.Hspec
 
 import Data.Tagged
+import Data.Proxy
 import GHC.Generics
 
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances
 import Data.Graph.HGraph.Internal (HGraph(Cons))
+import Data.Graph.HGraph.TH
 
 data Typ = Self | A | B | C
 data Node1 (self :: Typ) (other :: Typ)
@@ -34,15 +40,28 @@ data Node2 (self :: Typ) (other1 :: Typ) (other2 :: Typ)
 
 instance a `FieldPointsAt` b where
   fieldPointsAt = const
-instance Nullify a where
-  nullify = id
+instance Nullify pointedFrom pointedTo where
+  nullify Proxy = id
 
--- instance Normalize (Node2 a b c) (Node2 a b c) where
---   normalize = id
 instance Normalize (Node1 a b) where
-  type NormalizedCon (Node1 a b) = NoTyCon
   type NormalizedT (Node1 a b) = Node1 a b
   normalize = id
+instance (a `PointsAt` Node1 b c) => PointsAtInternal NoTyCon a (Node1 b c) where
+  pointsAtInternal Proxy a b = a `pointsAt` b
+instance Normalize (Node2 a b c) where
+  type NormalizedT (Node2 a b c) = Node2 a b c
+  normalize = id
+instance (a `PointsAt` Node2 b c d) => PointsAtInternal NoTyCon a (Node2 b c d) where
+  pointsAtInternal Proxy a b = a `pointsAt` b
+
+type instance Base (Tagged t a) = a
+
+type instance Base (Node1 a b) = Node1 a b
+instance ToBase (Node1 a b) where
+  base = id
+type instance Base (Node2 a b c) = Node2 a b c
+instance ToBase (Node2 a b c) where
+  base = id
 
 main :: IO ()
 main = hspec $ do
@@ -118,10 +137,10 @@ simpleChain' =
 -- @
 fanOut ::
   HGraph
-    '[ '(Node2 'C 'A 'B, "C1", '["A", "B"])
-     , '(Node1 'A 'B, "A", '[])
-     , '(Node1 'B 'C, "B", '["C2"])
-     , '(Node2 'C 'A 'B, "C2", '[])
+    '[ '("C1", '["A", "B"], Node2 'C 'A 'B)
+     , '("A", '[], Node1 'A 'B)
+     , '("B", '["C2"], Node1 'B 'C)
+     , '("C2", '[], Node2 'C 'A 'B)
      ]
 fanOut =
   Node2 1 (Just 4) Nothing ~>
@@ -131,10 +150,10 @@ fanOut =
 
 fanOut' ::
   HGraph
-    '[ '(Node2 'C 'A 'B, "C1", '["A", "B"])
-     , '(Node1 'A 'B, "A", '[])
-     , '(Node1 'B 'C, "B", '["C2"])
-     , '(Node2 'C 'A 'B, "C2", '[])
+    '[ '("C1", '["A", "B"], Node2 'C 'A 'B)
+     , '("A", '[], Node1 'A 'B)
+     , '("B", '["C2"], Node1 'B 'C)
+     , '("C2", '[], Node2 'C 'A 'B)
      ]
 fanOut' =
   Node (Node2 1 (Just 2) (Just 3)) `Cons`
@@ -155,11 +174,11 @@ fanOut' =
 
 fanIn ::
   HGraph
-  [ '(Node2 'C 'A 'B, "firstC", '["b"])
-  , '(Node1 'A 'B, "a", '["b"])
-  , '(Node1 'B 'C, "b", '["secondC"])
-  , '(Node2 'C 'A 'B, "secondC", '[])
-  ]
+   '[ '("firstC", '["b"], Node2 'C 'A 'B)
+    , '("a", '["b"], Node1 'A 'B)
+    , '("b", '["secondC"], Node1 'B 'C)
+    , '("secondC", '[], Node2 'C 'A 'B)
+    ]
 fanIn =
   Node2 1 Nothing Nothing ~>
   Node1 2 (Just 1) ~>
@@ -168,11 +187,11 @@ fanIn =
 
 fanIn' ::
   HGraph
-  [ '(Node2 'C 'A 'B, "firstC", '["b"])
-  , '(Node1 'A 'B, "a", '["b"])
-  , '(Node1 'B 'C, "b", '["secondC"])
-  , '(Node2 'C 'A 'B, "secondC", '[])
-  ]
+   '[ '("firstC", '["b"], Node2 'C 'A 'B)
+    , '("a", '["b"], Node1 'A 'B)
+    , '("b", '["secondC"], Node1 'B 'C)
+    , '("secondC", '[], Node2 'C 'A 'B)
+    ]
 fanIn' =
   Node (Node2 1 Nothing (Just 3)) `Cons`
   Node (Node1 2 (Just 3)) `Cons`
@@ -195,13 +214,13 @@ fanIn' =
 -- @
 inAndOut ::
   HGraph
-  [ '(Node1 'Self 'Self, 1, '[7])
-  , '(Node1 'Self 'Self, 2, '[3, 5, 6])
-  , '(Node1 'Self 'Self, 3, '[4])
-  , '(Node1 'Self 'Self, 4, '[7])
-  , '(Node1 'Self 'Self, 5, '[7])
-  , '(Node1 'Self 'Self, 6, '[])
-  , '(Node1 'Self 'Self, 7, '[])
+  [ '(1, '[7], Node1 'Self 'Self)
+  , '(2, '[3, 5, 6], Node1 'Self 'Self)
+  , '(3, '[4], Node1 'Self 'Self)
+  , '(4, '[7], Node1 'Self 'Self)
+  , '(5, '[7], Node1 'Self 'Self)
+  , '(6, '[], Node1 'Self 'Self)
+  , '(7, '[], Node1 'Self 'Self)
   ]
 inAndOut =
   Node1 1 Nothing ~>
@@ -215,13 +234,13 @@ inAndOut =
 
 inAndOut' ::
   HGraph
-  [ '(Node1 'Self 'Self, 1, '[7])
-  , '(Node1 'Self 'Self, 2, '[3, 5, 6])
-  , '(Node1 'Self 'Self, 3, '[4])
-  , '(Node1 'Self 'Self, 4, '[7])
-  , '(Node1 'Self 'Self, 5, '[7])
-  , '(Node1 'Self 'Self, 6, '[])
-  , '(Node1 'Self 'Self, 7, '[])
+  [ '(1, '[7], Node1 'Self 'Self)
+  , '(2, '[3, 5, 6], Node1 'Self 'Self)
+  , '(3, '[4], Node1 'Self 'Self)
+  , '(4, '[7], Node1 'Self 'Self)
+  , '(5, '[7], Node1 'Self 'Self)
+  , '(6, '[], Node1 'Self 'Self)
+  , '(7, '[], Node1 'Self 'Self)
   ]
 inAndOut' =
   Node (Node1 1 (Just 7)) `Cons`

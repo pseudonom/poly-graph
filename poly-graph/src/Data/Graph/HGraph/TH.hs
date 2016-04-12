@@ -9,15 +9,11 @@ declareBases :: [Name] -> DecsQ
 declareBases = fmap concat . mapM declareBase
 
 declareBase :: Name -> DecsQ
-declareBase name =
+declareBase name' =
   [d|
-    instance ToBase $(name') where
-      type HasBase $(name') = 'True
-      type Base $(name') = $(name')
+    type instance Base $(name) = $(name)
+    instance ToBase $(name) where
       base = id
   |]
   where
-    name' = conT name
-
--- mkClassP :: Name -> [Type] -> Pred
--- mkClassP cla tys = foldl AppT (ConT cla) tys
+    name = conT name'
