@@ -46,6 +46,8 @@ instance
   a `FieldPointsAt` b where
   fieldPointsAt = const
 
+type instance XX (Key a) = a
+type instance YY (Entity a) = a
 type family TypeError (b :: k) (msg :: Symbol) (a :: k) :: j
 
 instance
@@ -118,70 +120,76 @@ instance
   insertEntityElement (Node fe) = traverse_ (\(Entity key val) -> insertKey key val) fe
 
 
-type family Unwrap a where
+type family Unwrap (a :: *) where
   Unwrap (Entity a) = a
   Unwrap (f (Entity a)) = f a
-type family UnwrapAll a where
+type family UnwrapAll (as :: [(*, k, [k])]) where
   UnwrapAll ('(a, i, is) ': as) = '(Unwrap a, i, is) ': UnwrapAll as
   UnwrapAll '[] = '[]
 
+insertGraph' ::
+  (MonadIO m, InsertGraph '[] (UnwrapAll b) b backend, PersistStoreWrite backend) =>
+  HGraph (UnwrapAll b :: [(*, k, [k])]) -> ReaderT backend m (HGraph (b :: [(*, k, [k])]))
+insertGraph' = insertGraph (Proxy :: Proxy ('[] :: [*]))
 
-class InsertGraph a b backend where -- | a -> b, b -> a, a -> backend , b -> backend where
+class InsertGraph (ps :: [*]) (a :: [(*, k, [k])]) (b :: [(*, k, [k])]) (backend :: *) where -- | a -> b, b -> a, a -> backend , b -> backend where
   insertGraph ::
     (Monad m, MonadIO m, PersistStore backend, UnwrapAll b ~ a) =>
+    Proxy ps ->
     HGraph a -> ReaderT backend m (HGraph b)
 
 -- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
 instance
-  (InsertElement a b is backend, Show a, HasEot a, GNullify a (Eot a)) =>
-  InsertGraph '[ '(a, i, is)] '[ '(b, i, is)] backend where
-  insertGraph (a `Cons` Nil) = do
-    e <- insertElement a
+  (InsertElement ps a b is backend, HasEot a, GNullify a ps (Eot a)) =>
+  InsertGraph ps '[ '(a, i, is)] '[ '(b, i, is)] backend where
+  insertGraph Proxy (a `Cons` Nil) = do
+    e <- insertElement (Proxy :: Proxy ps) a
     pure $ e `Cons` Nil
 
 -- | HGraph recursive case
 instance
   ( (i `Member` (e ': f)) ~ 'UniqueName
   , Node i is a `PointsAtR` HGraph (e ': f)
-  , InsertGraph (b ': c) (e ': f) backend
-  , InsertElement a d is backend
+  , InsertGraph ps (b ': c) (e ': f) backend
+  , InsertElement ps a d is backend
   ) =>
-  InsertGraph ('(a, i, is) ': b ': c) ('(d, i, is) ': e ': f) backend where
-  insertGraph (a `Cons` b) = do
-    b' <- insertGraph b
+  InsertGraph ps ('(a, i, is) ': b ': c) ('(d, i, is) ': e ': f) backend where
+  insertGraph Proxy (a `Cons` b) = do
+    b' <- insertGraph (Proxy :: Proxy ps) b
     let a' = a `pointsAtR` b'
-    a'' <- insertElement a'
+    a'' <- insertElement (Proxy :: Proxy ps) a'
     pure $ a'' `Cons` b'
 
 
-class InsertElement a b is backend | a -> b, b -> a, a -> backend, b -> backend where
+class InsertElement (ps :: [*]) (a :: *) (b :: *) (is :: [k]) (backend :: *) | a -> b, b -> a, a -> backend, b -> backend where
   insertElement ::
     (Monad m, MonadIO m, PersistStore backend, Unwrap b ~ a) =>
+    Proxy ps ->
     Node i is a -> ReaderT backend m (Node j js b)
 instance
-  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, HasEot a, GNullify a (Eot a)) =>
-  InsertElement a (Entity a) '[] backend where
-  insertElement (Node a) = Node . flip Entity a' <$> insert a'
-    where a' = fromEot . gNullify (Proxy :: Proxy a) . toEot $ a
+  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, HasEot a, GNullify a ps (Eot a)) =>
+  InsertElement ps a (Entity a) '[] backend where
+  insertElement ps (Node a) = Node . flip Entity a' <$> insert a'
+    where a' = fromEot . gNullify (Proxy :: Proxy a) ps . toEot $ a
 instance
   (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a) =>
-  InsertElement a (Entity a) (i ': is) backend where
-  insertElement (Node a) = Node . flip Entity a <$> insert a
+  InsertElement ps a (Entity a) (i ': is) backend where
+  insertElement Proxy (Node a) = Node . flip Entity a <$> insert a
 instance
-  ( Show (f a), HasEot a, GNullify a (Eot a)
+  ( Show (f a), HasEot a, GNullify a ps (Eot a)
   , PersistEntityBackend a ~ BaseBackend backend, PersistEntity a
   , Traversable f, Applicative f
   ) =>
-  InsertElement (f a) (f (Entity a)) '[] backend where
-  insertElement (Node fa) = do
+  InsertElement ps (f a) (f (Entity a)) '[] backend where
+  insertElement ps (Node fa) = do
     trace ("inserting " ++ show fa) (pure ())
-    let fa' = fromEot . gNullify (Proxy :: Proxy a) . toEot <$> fa
+    let fa' = fromEot . gNullify (Proxy :: Proxy a) ps . toEot <$> fa
     fid <- traverse insert fa'
     pure $ Node (Entity <$> fid <*> fa')
 instance
   (Show (f a), PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, Traversable f, Applicative f) =>
-  InsertElement (f a) (f (Entity a)) (i ': is) backend where
-  insertElement (Node fa) = do
+  InsertElement ps (f a) (f (Entity a)) (i ': is) backend where
+  insertElement Proxy (Node fa) = do
     trace ("inserting " ++ show fa) (pure ())
     fid <- traverse insert fa
     pure $ Node (Entity <$> fid <*> fa)

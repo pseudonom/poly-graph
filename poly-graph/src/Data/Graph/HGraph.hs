@@ -25,6 +25,7 @@ module Data.Graph.HGraph
 
 import Control.Lens hiding (_head, _tail)
 import Data.Functor.Identity
+import Data.Type.Equality
 import Data.Proxy
 import Debug.Trace
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
@@ -65,28 +66,58 @@ class FieldPointsAt a b where
 infixr 5 :<
 pattern a :< b <- Node a `Cons` b
 
-class Nullify og a where
+class Nullify (og :: *) (a :: *) where
   nullify :: Proxy og -> a -> a
 
-class GNullify og a where
-  gNullify :: Proxy og -> a -> a
-instance (Show a, Show b, GNullify og a, GNullify og b) => GNullify og (Either a b) where
-  gNullify p l@(Left a) = trace (show l) $ Left $ gNullify p a
-  gNullify p r@(Right b) = trace (show r) $ Right $ gNullify p b
-instance (Show a, Show b, Nullify og a, GNullify og b) => GNullify og (a, b) where
-  gNullify p (a, b) = trace (show (a, b)) $ (nullify p a, gNullify p b)
-instance GNullify og () where
-  gNullify Proxy _ = ()
-instance GNullify og Void where
-  gNullify _ = error "impossible"
+type family XX (a :: *) :: *
+type family YY (a :: *) :: *
+type instance XX (Maybe a) = XX a
+type instance YY (Always a) = YY a
+type instance YY (Never a) = YY a
+type instance YY (Maybe a) = YY a
+
+class NullifyW (og :: *) (ps :: [*]) (b :: Bool) (a :: *) where
+  nullifyW :: Proxy og -> Proxy ps -> Proxy b -> a -> a
+-- | If we already set this key, leave it alone
+instance NullifyW og ps 'True a where
+  nullifyW Proxy Proxy Proxy = id
+instance (Nullify og a, NullifyW1 og ps a) => NullifyW og ps 'False a where
+  nullifyW og ps Proxy = nullifyW1 og ps
+
+class NullifyW1 (og :: *) (ps :: [*]) (a :: *) where
+  nullifyW1 :: Proxy og -> Proxy ps -> a -> a
+instance (Nullify og a) => NullifyW1 (og :: *) ('[] :: [*]) (a :: *) where
+  nullifyW1 p Proxy = nullify p
+instance ((XX a == YY p) ~ b, NullifyW og ps b a) => NullifyW1 (og :: *) ((p ': ps) :: [*]) (a :: *) where
+  nullifyW1 p Proxy = nullifyW p (Proxy :: Proxy ps) (Proxy :: Proxy b)
+
+class GNullify (og :: *) (ps :: [*]) (a :: *) where
+  gNullify :: Proxy og -> Proxy ps -> a -> a
+instance (Show a, Show b, GNullify og ps a, GNullify og ps b) => GNullify og ps (Either a b) where
+  gNullify og ps l@(Left a) = trace (show l) $ Left $ gNullify og ps a
+  gNullify og ps r@(Right b) = trace (show r) $ Right $ gNullify og ps b
+instance (Show a, Show b, NullifyW1 og ps a, GNullify og ps b) => GNullify og ps (a, b) where
+  gNullify og ps (a, b) = trace (show (a, b)) $ (nullifyW1 og ps a, gNullify og ps b)
+instance GNullify og ps () where
+  gNullify Proxy Proxy () = ()
+instance GNullify og ps Void where
+  gNullify = error "impossible"
 
 class a `PointsAtR` b where
   pointsAtR :: a -> b -> a
-instance (PointsAtRInternal (HasBase a) is (Node i is a) b) => Node i is a `PointsAtR` b where
-  pointsAtR = pointsAtRInternal (Proxy :: Proxy (HasBase a)) (Proxy :: Proxy is)
+instance (PointsAtRInternal (HasBase a) is '[] i is a b) => Node i is a `PointsAtR` HGraph b where
+  pointsAtR = pointsAtRInternal (Proxy :: Proxy (HasBase a)) (Proxy :: Proxy is) (Proxy :: Proxy '[])
 
-class PointsAtRInternal (hasBase :: Bool) og a b where
-  pointsAtRInternal :: Proxy hasBase -> Proxy og -> a -> b -> a
+class PointsAtRInternal
+  (hasBase :: Bool)
+  (og :: [k])
+  (ps :: [*])
+  (i :: k)
+  (is :: [k])
+  (a :: *)
+  (b :: [(*, k, [k])])
+  where
+  pointsAtRInternal :: Proxy hasBase -> Proxy og -> Proxy ps -> Node i is a -> HGraph b -> Node i is a
 
 type Never = Proxy
 type Always = Identity
@@ -131,31 +162,33 @@ instance (ToBase a) => ToBase (Node i is a) where
 -- | Never pointed at anything
 instance
   {-# OVERLAPPING #-}
-  (ToBase a, Base a ~ b, HasEot b, GNullify a (Eot b)) =>
-  PointsAtRInternal 'True '[] (Node i is a) (HGraph c) where
-  pointsAtRInternal Proxy Proxy n _ = n & _Node . base %~ fromEot . gNullify (Proxy :: Proxy a) . toEot
-instance
-  {-# OVERLAPPING #-}
-  (HasEot a, GNullify a (Eot a)) =>
-  PointsAtRInternal 'False '[] (Node i is a) (HGraph c) where
-  pointsAtRInternal Proxy Proxy n _ = n & _Node %~ fromEot . gNullify (Proxy :: Proxy a) . toEot
+  (ToBase a, Base a ~ b, HasEot b, GNullify a '[] (Eot b)) =>
+  PointsAtRInternal 'True '[] '[] i is a c where
+  pointsAtRInternal Proxy Proxy Proxy n _ =
+    n & _Node . base %~ fromEot . gNullify (Proxy :: Proxy a) (Proxy :: Proxy '[]) . toEot
+-- instance
+--   {-# OVERLAPPING #-}
+--   (HasEot a, GNullify a '[] (Eot a)) =>
+--   PointsAtRInternal 'False '[] '[] i is a c where
+--   pointsAtRInternal Proxy Proxy Proxy n _ = n & _Node %~ fromEot . gNullify (Proxy :: Proxy a) (Proxy :: Proxy '[]) . toEot
 
 -- | Base case. Used to point at things but have already handled all pointers.
-instance
-  PointsAtRInternal bool (j ': js) (Node i '[] a) (HGraph b) where
-  pointsAtRInternal Proxy Proxy a _ = a
+instance (ToBase a, Base a ~ b, HasEot b, GNullify a ps (Eot b)) =>
+  PointsAtRInternal bool (j ': js) ps i '[] a c where
+  pointsAtRInternal Proxy Proxy Proxy n _ =
+    n & _Node . base %~ fromEot . gNullify (Proxy :: Proxy a) (Proxy :: Proxy ps) . toEot
 -- | Points at wrong thing
 instance
   (Node i (j ': js) a `PointsAtR` HGraph c) =>
-  PointsAtRInternal bool og (Node i (j ': js) a) (HGraph ('(b, k, ls) ': c)) where
-  pointsAtRInternal Proxy Proxy a (Cons _ c) = a `pointsAtR` c
+  PointsAtRInternal bool og ps i (j ': js) a ('(b, k, ls) ': c) where
+  pointsAtRInternal Proxy Proxy Proxy a (Cons _ c) = a `pointsAtR` c
 -- | Adjacent
 instance {-# OVERLAPPING #-}
   ( Node i (j ': js) a `PointsAt` Node j ks b
-  ,PointsAtRInternal bool og (Node i js a) (HGraph ('(b, j, ks) ': c))
+  , PointsAtRInternal bool og (b ': ps) i js a ('(b, j, ks) ': c)
   ) =>
-  PointsAtRInternal bool og (Node i (j ': js) a) (HGraph ('(b, j, ks) ': c)) where
-  pointsAtRInternal base og a r@(Cons b _) = retag $ pointsAtRInternal base og a' r
+  PointsAtRInternal bool og ps i (j ': js) a ('(b, j, ks) ': c) where
+  pointsAtRInternal base og Proxy a r@(Cons b _) = retag $ pointsAtRInternal base og (Proxy :: Proxy (b ': ps)) a' r
     where
       a' :: Node i js a
       a' = retag $ a `pointsAt` b
