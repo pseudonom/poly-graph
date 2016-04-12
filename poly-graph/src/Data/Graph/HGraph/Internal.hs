@@ -19,7 +19,7 @@ import Data.Monoid ((<>))
 import GHC.Generics (Generic)
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
-data Node (i :: k) (is :: Either [k] [k]) a = Node { unNode :: a } deriving (Eq, Show, Functor, Generic)
+data Node (i :: k) (is :: ([k], [k])) a = Node { unNode :: a } deriving (Eq, Show, Functor, Generic)
 
 instance (Arbitrary a) => Arbitrary (Node i is a) where
   arbitrary = Node <$> arbitrary
@@ -38,7 +38,7 @@ type family Member (a :: k) (as :: [(t, k, [k])]) :: IsDuplicateName k where
 
 infixr 5 `Cons`
 data HGraph y where
-  Cons :: ((i `Member` b) ~ 'UniqueName) => Node i ('Right is) a -> HGraph b -> HGraph ('(a, i, is) ': b)
+  Cons :: ((i `Member` b) ~ 'UniqueName) => Node i '( '[], is) a -> HGraph b -> HGraph ('(a, i, is) ': b)
   Nil :: HGraph '[]
 
 instance (Show x, Show (HGraph xs)) => Show (HGraph ('(x, i, is) ': xs)) where

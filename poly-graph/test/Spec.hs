@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -35,6 +36,13 @@ instance a `FieldPointsAt` b where
   fieldPointsAt = const
 instance Nullify a where
   nullify = id
+
+-- instance Normalize (Node2 a b c) (Node2 a b c) where
+--   normalize = id
+instance Normalize (Node1 a b) where
+  type NormalizedCon (Node1 a b) = NoTyCon
+  type NormalizedT (Node1 a b) = Node1 a b
+  normalize = id
 
 main :: IO ()
 main = hspec $ do

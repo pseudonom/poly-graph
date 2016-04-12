@@ -12,6 +12,7 @@ packages:
     commit: 75697c763567f9e344313cc6baa13215f95d18cf
   subdirs:
   - persistent
+  extra-dep: true
 
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)

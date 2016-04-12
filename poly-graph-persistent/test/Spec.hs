@@ -106,6 +106,19 @@ instance Arbitrary Foo where
 -- However, if we do, any graphs with a missing instance match this instance and then fail via
 -- a context reduction stack overflow which is pretty ugly.
 
+instance ToBase SelfRef where
+  type HasBase SelfRef = 'True
+  type Base SelfRef = SelfRef
+  base = id
+instance ToBase District where
+  type HasBase District = 'True
+  type Base District = District
+  base = id
+instance ToBase Teacher where
+  type HasBase Teacher = 'True
+  type Base Teacher = Teacher
+  base = id
+
 instance SelfRef `PointsAt` Entity SelfRef
 instance SelfRef `PointsAt` Maybe (Entity SelfRef)
 instance Student `PointsAt` Entity Teacher
@@ -116,9 +129,6 @@ instance Foo `PointsAt` Entity Teacher
 
 _entityKey :: Lens' (Entity a) (Key a)
 _entityKey pure' (Entity i e) = (\i' -> Entity i' e) <$> pure' i
-
-_entityVal :: Lens' (Entity a) a
-_entityVal pure' (Entity i e) = (\e' -> Entity i e') <$> pure' e
 
 type M = ReaderT SqlBackend (LoggingT (ResourceT IO))
 main :: IO ()
@@ -165,16 +175,16 @@ main = do
       it "defaults `Maybe` keys to `Nothing` during insertion when they're at the end of the graph" $ db $ do
         entGraph <- insertGraph . unRawGraph =<< liftIO (generate arbitrary) :: M (Line '[Maybe (Entity SelfRef)])
         liftIO $ (entGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
-      it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're at the end of the graph" $ db $ do
+      it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're in the middle of the graph" $ db $ do
         arbGraph <-
           liftIO (generate arbitrary)
-          :: M (HGraph '[ '(Maybe (Entity SelfRef), 1, '[]), '(Maybe (Entity SelfRef), 2, '[]) ])
-        liftIO $ (arbGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+          :: M (HGraph '[ '(Always (Entity SelfRef), 1, '[]), '(Maybe (Entity SelfRef), 2, '[]) ])
+        liftIO $ (arbGraph ^? _head . _Always . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "defaults `Maybe` keys to `Nothing` during insertion when they're in the middle of the graph" $ db $ do
         entGraph <-
           insertGraph . unRawGraph =<< liftIO (generate arbitrary)
-          :: M (HGraph '[ '(Maybe (Entity SelfRef), 1, '[]), '(Maybe (Entity SelfRef), 2, '[]) ])
-        liftIO $ (entGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+          :: M (HGraph '[ '(Always (Entity SelfRef), 1, '[]), '(Maybe (Entity SelfRef), 2, '[]) ])
+        liftIO $ (entGraph ^? _head . _Always . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "works with Maybe key to plain" $ db $ do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
@@ -262,4 +272,3 @@ main = do
         let autoTree = (st, te, sc, di)
         liftIO $ autoTree `shouldBe` manualTree
         liftIO $ print autoTree
-        liftIO $ print "foo"

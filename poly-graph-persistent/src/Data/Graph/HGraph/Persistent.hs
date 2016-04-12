@@ -68,37 +68,23 @@ data Entity'
 
 type instance TyConType Entity = Entity'
 type instance HandleLeft Entity' = Entity'
+instance Normalize (Entity a) where
+  type NormalizedCon (Entity a) = Entity'
+  type NormalizedT (Entity a) = Entity a
+  normalize = id
+
+_entityVal :: Lens' (Entity a) a
+_entityVal pure' (Entity i e) = (\e' -> Entity i e') <$> pure' e
+
+instance ToBase (Entity a) where
+  type HasBase (Entity a) = 'True
+  type Base (Entity a) = a
+  base = _entityVal
 
 instance (a `DispatchOnTyCons` b) => PointsAtInternal Entity' r (Entity a) b where
   pointsAtInternal Proxy Proxy (Entity i a) b = Entity i $ a `pointsAtDispatcher` b
 instance (a `PointsAt` Entity b) => PointsAtInternal NoTyCon Entity' a (Entity b) where
   pointsAtInternal Proxy Proxy a b = a `pointsAt` b
-
--- | Points at nothing
-instance
-  {-# OVERLAPPING #-}
-  (Show a, HasEot a, GNullify (Eot a)) =>
-  Node i ('Right '[]) (Entity a) `PointsAtR` (HGraph b) where
-  Node (Entity i a) `pointsAtR` _ =
-    trace ("Entity nullify " ++ show a) $ Node . Entity i . fromEot . gNullify $ toEot a
-instance
-  {-# OVERLAPPING #-}
-  (Show a, HasEot a, GNullify (Eot a)) =>
-  Node i ('Right '[]) (Maybe (Entity a)) `PointsAtR` (HGraph b) where
-  Node (Just (Entity i a)) `pointsAtR` _ =
-    trace ("Entity nullify " ++ show a) $ Node . Just . Entity i . fromEot . gNullify $ toEot a
-  Node Nothing `pointsAtR` _ = Node Nothing
-instance
-  {-# OVERLAPPING #-}
-  (Show a, HasEot a, GNullify (Eot a)) =>
-  Node i ('Right '[]) (Never (Entity a)) `PointsAtR` (HGraph b) where
-  Node Never `pointsAtR` _ = Node Never
-instance
-  {-# OVERLAPPING #-}
-  (Show a, HasEot a, GNullify (Eot a)) =>
-  Node i ('Right '[]) (Always (Entity a)) `PointsAtR` (HGraph b) where
-  Node (Always (Entity i a)) `pointsAtR` _ =
-    trace ("Entity nullify " ++ show a) $ Node . Always . Entity i . fromEot . gNullify $ toEot a
 
 class InsertEntityGraph a backend | a -> backend where
   insertEntityGraph ::
@@ -156,7 +142,7 @@ instance
 -- | HGraph recursive case
 instance
   ( (i `Member` (e ': f)) ~ 'UniqueName
-  , Node i ('Right is) a `PointsAtR` HGraph (e ': f)
+  , Node i '( '[], is) a `PointsAtR` HGraph (e ': f)
   , InsertGraph (b ': c) (e ': f) backend
   , InsertElement a d is backend
   ) =>
@@ -168,10 +154,10 @@ instance
     pure $ a'' `Cons` b'
 
 
-class InsertElement a b is backend where -- | a -> b, b -> a, a -> backend, b -> backend where
+class InsertElement a b is backend | a -> b, b -> a, a -> backend, b -> backend where
   insertElement ::
     (Monad m, MonadIO m, PersistStore backend, Unwrap b ~ a) =>
-    Node i ('Right is) a -> ReaderT backend m (Node j js b)
+    Node i '( '[], is) a -> ReaderT backend m (Node j js b)
 instance
   (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, HasEot a, GNullify (Eot a)) =>
   InsertElement a (Entity a) '[] backend where
