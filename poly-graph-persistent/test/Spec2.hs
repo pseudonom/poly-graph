@@ -198,18 +198,17 @@ main = do
         --   insertGraph arbGraph :: M (Line '[Entity Student, Entity Teacher])
         pure ()
       it "finally, we can do much more complicated directed graphs, if we need to" $ db $ do
-        arbGraph <- unRawGraph <$> arbitrary'
-        entGraph <-
-          insertGraph arbGraph ::
-          M (
-            HGraph
-              '[ '("Student1", '["Teacher1"], Entity Student)
-               , '("Student2", '["Teacher2"], Entity Student)
-               , '("Multi", '["Teacher1", "School"], Entity MultiPointer)
-               , '("Teacher1", '["School"], Entity Teacher)
-               , '("Teacher2", '["School"], Entity Teacher)
-               , '("School", '["District"], Entity School)
-               , '("District", '[], Maybe (Entity District))
-               ]
-            )
-        liftIO $ print entGraph
+        arbGraph <- arbitrary'
+          :: 
+            M (
+              HGraph
+                '[ '("Student1", '["Teacher1"], Entity Student)
+                 , '("Student2", '["Teacher2"], Entity Student)
+                 , '("Multi", '["Teacher1", "School"], Entity MultiPointer)
+                 , '("Teacher1", '["School"], Entity Teacher)
+                 , '("Teacher2", '["School"], Entity Teacher)
+                 , '("School", '["District"], Entity School)
+                 , '("District", '[], Maybe (Entity District))
+                 ]
+              )
+        liftIO $ print arbGraph

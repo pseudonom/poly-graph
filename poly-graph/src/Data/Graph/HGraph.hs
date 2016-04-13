@@ -24,7 +24,8 @@ module Data.Graph.HGraph
   , X.retag
   ) where
 
-import Control.Lens hiding (_head, _tail)
+import Control.Lens hiding (_head, _tail, Snoc)
+import Data.Type.Bool
 import Data.Type.Equality
 import Data.Proxy
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
@@ -73,17 +74,21 @@ class Nullify (pointedFrom :: *) (pointedTo :: *) where
   nullify :: Proxy pointedFrom -> pointedTo -> pointedTo
 
 -- | Handles early escape from @NullifyRecurse@.
-class EscapeNullify (pointedFrom :: *) (completedLinkages :: [*]) (match :: Bool) (a :: *) where
-  escapeNullify :: Proxy pointedFrom -> Proxy completedLinkages -> Proxy match -> a -> a
+class EscapeNullify (pointedFrom :: *) (match :: Bool) (a :: *) where
+  escapeNullify :: Proxy pointedFrom -> Proxy match -> a -> a
 -- | If we previously set this @Nullable@, leave it alone and terminate recursion.
-instance EscapeNullify pointedFrom completedLinkages 'True a where
-  escapeNullify Proxy Proxy Proxy = id
+instance EscapeNullify pointedFrom 'True a where
+  escapeNullify Proxy Proxy = id
 -- | If we didn't previously set this @Nullable@, @nullify@ is still a possibility.
 -- Continue the recursion to see if we do actually get to @nullify@.
 instance
-  (Nullify pointedFrom a, NullifyRecurse pointedFrom completedLinkages a) =>
-  EscapeNullify pointedFrom completedLinkages 'False a where
-  escapeNullify pointedFrom completedLinkages Proxy = nullifyRecurse pointedFrom completedLinkages
+  (Nullify pointedFrom a) =>
+  EscapeNullify pointedFrom 'False a where
+  escapeNullify p Proxy a = nullify p a
+
+type family BaseMember (a :: *) (as :: [*]) :: Bool where
+  BaseMember b '[] = 'False
+  BaseMember b (a ': as) = If (Base b == Base a) 'True (BaseMember b as)
 
 -- | Uses the list of completed linkages to determine if this key should be nullable.
 -- For example, if we've already done @A `PointsAt` Entity B@, we shouldn't wipe @A@'s key to @B@.
@@ -92,13 +97,9 @@ class NullifyRecurse (pointedFrom :: *) (completedLinkages :: [*]) (a :: *) wher
 -- | There's at least one more linkage left to examine.
 -- Test if the candidate @Nullable@ equals the current link and call the corresponding @EscapeNullify@.
 instance
-  ((Base a == Base link) ~ match, EscapeNullify pointedFrom completedLinkages match a) =>
-  NullifyRecurse (pointedFrom :: *) ((link ': completedLinkages) :: [*]) (a :: *) where
-  nullifyRecurse p Proxy = escapeNullify p (Proxy :: Proxy completedLinkages) (Proxy :: Proxy match)
--- | If we've made it this far, none of our completed linkages matched the candidate @Nullable@.
--- We're free to @nullify@.
-instance (Nullify pointedFrom a) => NullifyRecurse (pointedFrom :: *) ('[] :: [*]) (a :: *) where
-  nullifyRecurse p Proxy = nullify p
+  (BaseMember a completedLinkages ~ match, EscapeNullify pointedFrom match a) =>
+  NullifyRecurse (pointedFrom :: *) (completedLinkages :: [*]) (a :: *) where
+  nullifyRecurse p Proxy = escapeNullify (Proxy :: Proxy pointedFrom) (Proxy :: Proxy match)
 
 -- | This provides the basic structure of @eot@ recursion so end users don't have to worry about it.
 -- Users only have to define the @Nullify@ instances.
@@ -180,13 +181,17 @@ instance
   PointsAtRInternal originalLinks typesLinked i (link ': remainingLinks) a ('(j, js, b) ': graph) where
   pointsAtRInternal ol tl a (Cons _ c) = pointsAtRInternal ol tl a c
 
+type family Snoc (as :: [k]) (a :: k) :: [k] where
+  Snoc '[] a = '[a]
+  Snoc (a ': as) b = a ': (as `Snoc` b)
+
 -- | Adjacent
 instance {-# OVERLAPPING #-}
   ( Node i (link ': remainingLinks) a `PointsAt` Node link js b
-  , PointsAtRInternal originalLinks (b ': typesLinked) i remainingLinks a c
+  , PointsAtRInternal originalLinks (typesLinked `Snoc` b) i remainingLinks a c
   ) =>
   PointsAtRInternal originalLinks typesLinked i (link ': remainingLinks) a ('(link, js, b) ': c) where
-  pointsAtRInternal ol Proxy a (Cons b c) = retag $ pointsAtRInternal ol (Proxy :: Proxy (b ': typesLinked)) a' c
+  pointsAtRInternal ol Proxy a (Cons b c) = retag $ pointsAtRInternal ol (Proxy :: Proxy (typesLinked `Snoc` b)) a' c
     where
       a' :: Node i remainingLinks a
       a' = retag $ a `pointsAt` b
