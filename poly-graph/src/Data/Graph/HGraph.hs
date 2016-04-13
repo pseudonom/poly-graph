@@ -102,13 +102,13 @@ instance (Nullify pointedFrom a) => NullifyRecurse (pointedFrom :: *) ('[] :: [*
 
 -- | This provides the basic structure of @eot@ recursion so end users don't have to worry about it.
 -- Users only have to define the @Nullify@ instances.
-class GNullify (og :: *) (ps :: [*]) (a :: *) where
-  gNullify :: Proxy og -> Proxy ps -> a -> a
-instance (GNullify og ps a, GNullify og ps b) => GNullify og ps (Either a b) where
-  gNullify og ps (Left a) = Left $ gNullify og ps a
-  gNullify og ps (Right b) = Right $ gNullify og ps b
-instance (NullifyRecurse og ps a, GNullify og ps b) => GNullify og ps (a, b) where
-  gNullify og ps (a, b) = (nullifyRecurse og ps a, gNullify og ps b)
+class GNullify (original :: *) (typesLinked :: [*]) (a :: *) where
+  gNullify :: Proxy original -> Proxy typesLinked -> a -> a
+instance (GNullify original typesLinked a, GNullify original typesLinked b) => GNullify original typesLinked (Either a b) where
+  gNullify og tl (Left a) = Left $ gNullify og tl a
+  gNullify og tl (Right b) = Right $ gNullify og tl b
+instance (NullifyRecurse original typesLinked a, GNullify original typesLinked b) => GNullify original typesLinked (a, b) where
+  gNullify og tl (a, b) = (nullifyRecurse og tl a, gNullify og tl b)
 instance GNullify og ps () where
   gNullify Proxy Proxy () = ()
 instance GNullify og ps Void where

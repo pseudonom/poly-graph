@@ -120,13 +120,13 @@ type family UnwrapAll (as :: [(k, [k], *)]) where
   UnwrapAll ('(i, is, a) ': as) = '(i, is, Unwrap a) ': UnwrapAll as
   UnwrapAll '[] = '[]
 
-insertGraph' ::
+insertGraph ::
   (MonadIO m, InsertGraph '[] (UnwrapAll b) b backend, PersistStoreWrite backend) =>
   HGraph (UnwrapAll b) -> ReaderT backend m (HGraph b)
-insertGraph' = insertGraph (Proxy :: Proxy ('[] :: [*]))
+insertGraph = insertGraph' (Proxy :: Proxy ('[] :: [*]))
 
 class InsertGraph (ps :: [*]) (a :: [(k, [k], *)]) (b :: [(k, [k], *)]) (backend :: *) | a -> b, b -> a, a -> backend , b -> backend where
-  insertGraph ::
+  insertGraph' ::
     (Monad m, MonadIO m, PersistStore backend, UnwrapAll b ~ a) =>
     Proxy ps ->
     HGraph a -> ReaderT backend m (HGraph b)
@@ -137,7 +137,7 @@ instance
   , PointsAtR i is a '[]
   ) =>
   InsertGraph ps '[ '(i, is, a)] '[ '(i, is, b)] backend where
-  insertGraph Proxy (a `Cons` Nil) = do
+  insertGraph' Proxy (a `Cons` Nil) = do
     e <- insertElement (Proxy :: Proxy ps) $ a `pointsAtR` Nil
     pure $ e `Cons` Nil
 
@@ -149,8 +149,8 @@ instance
   , InsertElement ps a d is backend
   ) =>
   InsertGraph ps ('(i, is, a) ': b ': c) ('(i, is, d) ': e ': f) backend where
-  insertGraph Proxy (a `Cons` b) = do
-    b' <- insertGraph (Proxy :: Proxy ps) b
+  insertGraph' Proxy (a `Cons` b) = do
+    b' <- insertGraph' (Proxy :: Proxy ps) b
     let a' = a `pointsAtR` b'
     a'' <- insertElement (Proxy :: Proxy ps) a'
     pure $ a'' `Cons` b'

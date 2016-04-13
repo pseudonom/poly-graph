@@ -61,6 +61,7 @@ instance Arbitrary Text where
   arbitrary = pack . filter (not . isBadChar) <$> arbitrary
     where isBadChar x = x == '\NUL' || x == '\\' -- Make postgres vomit
 
+
 share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistUpperCase|
   SelfRef
     name Text
@@ -100,11 +101,6 @@ instance Arbitrary SelfRef where
 instance Arbitrary Foo where
   arbitrary = Foo "foo" <$> arbitrary <*> arbitrary
 
--- We ought to be able to provide a generic instance like
--- @instance (a `PointsAt` Maybe b) => a `PointsAt` b where a `pointsAt` b = a `pointsAt` Just b@
--- However, if we do, any graphs with a missing instance match this instance and then fail via
--- a context reduction stack overflow which is pretty ugly.
-
 declareBases [''SelfRef, ''District, ''School, ''Student, ''Teacher, ''Foo, ''Text]
 
 instance SelfRef `PointsAt` Entity SelfRef
@@ -124,12 +120,12 @@ main = do
   runConn $ runMigrationUnsafe testMigrate
   hspec $
     describe "poly-graph-persistent" $ do
-      it "works with plucked lenses" $ db $ do
+      it "works with plucked lenses" $ do
         graph <-
-          unRawGraph <$> liftIO (generate arbitrary)
-            :: M (Line '[Student, Teacher, School])
+          unRawGraph <$> generate arbitrary
+            :: IO (Line '[Student, Teacher, School])
         let graph' = graph & pluck (Proxy :: Proxy School) . schoolName .~ "Hello"
-        liftIO $ print graph'
+        print graph'
       -- it "doesn't type check with a dangling (non-`Maybe`) key" $ db $ do
       --   graph <- liftIO (generate arbitrary) :: M (HGraph '[ '("Teacher", '[], Teacher) ])
       --   liftIO $ print graph
@@ -138,15 +134,15 @@ main = do
       --     liftIO (generate arbitrary)
       --     :: M (HGraph '[ '("Teacher", '["Teacher"], Teacher), '("Teacher", '[], Student) ])
       --   liftIO $ print graph
-      it "generates arbitrary entities" $ db $ do
+      it "generates arbitrary entities" $ do
         graph <-
-          liftIO (generate arbitrary)
-            :: M (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District)])
-        liftIO $ print graph
+          generate arbitrary
+            :: IO (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District)])
+        print graph
       it "defaults only missing keys to nothing" $ db $ do
         arbGraph <- unRawGraph <$> liftIO (generate arbitrary)
         entGraph <-
-          insertGraph' arbGraph
+          insertGraph arbGraph
           :: M (
                HGraph
                 '[ '("F", '["S"], Entity Foo)
@@ -157,20 +153,20 @@ main = do
                )
         liftIO $ (entGraph ^. _head . _entityVal . fooTeacherId) `shouldBe` Nothing
         liftIO $ (entGraph ^. _head . _entityVal . fooStudentId) `shouldBe` (Just $ entGraph ^. _tail . _head . _entityKey)
-      it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're at the end of the graph" $ db $ do
-        arbGraph <- liftIO (generate arbitrary) :: M (Line '[Maybe (Entity SelfRef)])
-        liftIO $ (arbGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+      it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're at the end of the graph" $ do
+        arbGraph <- generate arbitrary :: IO (Line '[Maybe (Entity SelfRef)])
+        (arbGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "defaults `Maybe` keys to `Nothing` during insertion when they're at the end of the graph" $ db $ do
-        entGraph <- insertGraph' . unRawGraph =<< liftIO (generate arbitrary) :: M (Line '[Maybe (Entity SelfRef)])
+        entGraph <- insertGraph . unRawGraph =<< liftIO (generate arbitrary) :: M (Line '[Maybe (Entity SelfRef)])
         liftIO $ (entGraph ^? _head . _Just . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
-      it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're in the middle of the graph" $ db $ do
+      it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're in the middle of the graph" $ do
         arbGraph <-
-          liftIO (generate arbitrary)
-          :: M (HGraph '[ '(1, '[], Always (Entity SelfRef)), '(2, '[], Maybe (Entity SelfRef)) ])
-        liftIO $ (arbGraph ^? _head . _Always . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+          generate arbitrary
+          :: IO (HGraph '[ '(1, '[], Always (Entity SelfRef)), '(2, '[], Maybe (Entity SelfRef)) ])
+        (arbGraph ^? _head . _Always . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "defaults `Maybe` keys to `Nothing` during insertion when they're in the middle of the graph" $ db $ do
         entGraph <-
-          insertGraph' . unRawGraph =<< liftIO (generate arbitrary)
+          insertGraph . unRawGraph =<< liftIO (generate arbitrary)
           :: M (HGraph '[ '(1, '[], Always (Entity SelfRef)), '(2, '[], Maybe (Entity SelfRef)) ])
         liftIO $ (entGraph ^? _head . _Always . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "works with Maybe key to plain" $ db $ do
@@ -184,7 +180,7 @@ main = do
                     ]
                  )
         graph' <-
-          insertGraph' graph
+          insertGraph graph
             :: M (
                  HGraph
                    '[ '("Plain1", '["Plain2"], Entity SelfRef)
@@ -211,7 +207,7 @@ main = do
                     ]
                  )
         graph' <-
-          insertGraph' graph
+          insertGraph graph
             :: M (
                  HGraph
                    '[ '("Plain1", '["Maybe1", "Always1", "Never1", "Plain2"], Entity SelfRef)
@@ -244,7 +240,7 @@ main = do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
         (st :< te :< sc :< Always di :< Nil) <-
-          insertGraph' graph
+          insertGraph graph
             :: M (
                  Line
                    '[ Entity Student
