@@ -17,6 +17,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
+{-# OPTIONS_GHC -fno-warn-unused-matches #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 import Test.Hspec
@@ -177,8 +178,7 @@ main = do
         arbGraph <- unRawGraph <$> arbitrary'
         (st :< te :< sc :< Always di :< Nil) <-
           insertGraph arbGraph :: M (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District)])
-        pure ()
-        -- liftIO $ studentIsInDistrict st te sc di `shouldBe` True
+        liftIO $ studentIsInDistrict st te sc di `shouldBe` True
       it "And we can set nested properties we care about" $ db $ do
         arbGraph <- unRawGraph <$> arbitrary'
         let arbGraph' =
@@ -187,15 +187,13 @@ main = do
                 & pluck (Proxy :: Proxy (Entity Student)) . studentName .~ "Bar"
         (st :< te :< sc :< Always di :< Nil) <-
           insertGraph arbGraph' :: M (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District)])
-        pure ()
-        -- liftIO $ studentIsInDistrict st te sc di `shouldBe` True
+        liftIO $ studentIsInDistrict st te sc di `shouldBe` True
       it "we can also omit some entities and get sensible defaulting" $ db $ do
         arbGraph <- unRawGraph <$> arbitrary'
         (st :< te :< sc :< Nil) <-
           insertGraph arbGraph :: M (Line '[Entity Student, Entity Teacher, Entity School])
-        pure ()
-        -- liftIO $ sc ^. _entityVal . schoolDistrictId  `shouldBe` Nothing
-      it "but if we omit entities that are required, we get a type error" $ db $ do
+        liftIO $ sc ^. _entityVal . schoolDistrictId  `shouldBe` Nothing
+      it "but if we omit entities that are required, we get a type error" $ db $
         -- arbGraph <- unRawGraph <$> arbitrary'
         -- (st :< te :< Nil) <-
         --   insertGraph arbGraph :: M (Line '[Entity Student, Entity Teacher])
@@ -214,5 +212,4 @@ main = do
                  , '("District", '[], Maybe (Entity District))
                  ]
               )
-        pure ()
-      --   liftIO $ print arbGraph
+        liftIO $ print arbGraph

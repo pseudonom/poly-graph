@@ -23,7 +23,7 @@ library
                      , tagged
                      , generics-eot
                      , QuickCheck
-                     , lens
+                     , profunctors
                      , template-haskell
   default-language:    Haskell2010
 

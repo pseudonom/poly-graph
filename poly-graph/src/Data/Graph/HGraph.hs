@@ -24,14 +24,14 @@ module Data.Graph.HGraph
   , X.retag
   ) where
 
-import Control.Lens hiding (_head, _tail, Snoc)
+import Data.Functor.Identity
 import Data.Type.Bool
 import Data.Type.Equality
 import Data.Proxy
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import Test.QuickCheck.Arbitrary
 
-import Data.Graph.HGraph.Internal as X hiding (Lens')
+import Data.Graph.HGraph.Internal as X
 
 -- | This class specifies how to link two types to reflect their type level linkage in an @HGraph@.
 infixr 5 `PointsAt`
@@ -67,6 +67,7 @@ class FieldPointsAt a b where
 -- | "Read-only" pattern allows convenient destructuring while encouraging preservation
 -- linkage invariant
 infixr 5 :<
+pattern (:<) :: Member i b ~ 'UniqueName => a -> HGraph b -> HGraph ('(i, is, a) ': b)
 pattern a :< b <- Node a `Cons` b
 
 -- | We don't strictly need @pointedFrom@ but it makes our errors much more helpful.
@@ -99,7 +100,7 @@ class NullifyRecurse (pointedFrom :: *) (completedLinkages :: [*]) (a :: *) wher
 instance
   (BaseMember a completedLinkages ~ match, EscapeNullify pointedFrom match a) =>
   NullifyRecurse (pointedFrom :: *) (completedLinkages :: [*]) (a :: *) where
-  nullifyRecurse p Proxy = escapeNullify (Proxy :: Proxy pointedFrom) (Proxy :: Proxy match)
+  nullifyRecurse _ Proxy = escapeNullify (Proxy :: Proxy pointedFrom) (Proxy :: Proxy match)
 
 -- | This provides the basic structure of @eot@ recursion so end users don't have to worry about it.
 -- Users only have to define the @Nullify@ instances.
@@ -135,7 +136,9 @@ class PointsAtRInternal
 type Never = Proxy
 type Always = Identity
 
+pattern Always :: a -> Always a
 pattern Always a = Identity a
+pattern Never :: Never a
 pattern Never = Proxy
 
 _Always :: Lens' (Always a) a

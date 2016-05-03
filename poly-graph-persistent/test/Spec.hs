@@ -252,5 +252,4 @@ main = do
 
         let manualTree = (Entity stId stB, Entity teId teB, Entity scId scB, Entity diId diB)
         let autoTree = (st, te, sc, di)
-        -- liftIO $ autoTree `shouldBe` manualTree
-        pure ()
+        liftIO $ autoTree `shouldBe` manualTree

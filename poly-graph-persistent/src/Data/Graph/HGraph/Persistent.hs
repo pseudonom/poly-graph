@@ -12,6 +12,8 @@
 -- Pattern synonyms and exhaustivity checking don't work well together
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+-- TODO: Remove this once we're using the official TypeError
+{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 
 module Data.Graph.HGraph.Persistent where
 
@@ -22,7 +24,7 @@ import Data.Proxy
 import Database.Persist
 import Database.Persist.Sql
 import Generics.Eot (Eot, HasEot)
-import GHC.TypeLits
+import GHC.TypeLits hiding (TypeError)
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
 import Data.Graph.HGraph
@@ -54,7 +56,7 @@ instance
   nullify Proxy = const Nothing
 instance
   {-# OVERLAPPING #-}
-  (TypeError pointedFrom "is missing pointer to" a) =>
+  (TypeError pointedFrom " is missing pointer to " a) =>
   Nullify pointedFrom (Key a) where
   nullify Proxy = id
 instance
@@ -83,7 +85,7 @@ instance (a `PointsAt` Entity b) => PointsAtInternal NoTyCon a (Entity b) where
 
 class InsertEntityGraph a backend | a -> backend where
   insertEntityGraph ::
-    (Monad m, MonadIO m, PersistStore backend) =>
+    (MonadIO m, PersistStore backend) =>
     HGraph a -> ReaderT backend m ()
 
 -- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
@@ -100,7 +102,7 @@ instance
 
 class InsertEntityElement a backend | a -> backend where
   insertEntityElement ::
-    (Monad m, MonadIO m, PersistStore backend) =>
+    (MonadIO m, PersistStore backend) =>
     Node i is a -> ReaderT backend m ()
 
 instance
@@ -127,7 +129,7 @@ insertGraph = insertGraph' (Proxy :: Proxy ('[] :: [*]))
 
 class InsertGraph (ps :: [*]) (a :: [(k, [k], *)]) (b :: [(k, [k], *)]) (backend :: *) | a -> b, b -> a, a -> backend , b -> backend where
   insertGraph' ::
-    (Monad m, MonadIO m, PersistStore backend, UnwrapAll b ~ a) =>
+    (MonadIO m, PersistStore backend, UnwrapAll b ~ a) =>
     Proxy ps ->
     HGraph a -> ReaderT backend m (HGraph b)
 
@@ -158,7 +160,7 @@ instance
 
 class InsertElement (ps :: [*]) (a :: *) (b :: *) (is :: [k]) (backend :: *) | a -> b, b -> a, a -> backend, b -> backend where
   insertElement ::
-    (Monad m, MonadIO m, PersistStore backend, Unwrap b ~ a) =>
+    (MonadIO m, PersistStore backend, Unwrap b ~ a) =>
     Proxy ps ->
     Node i is a -> ReaderT backend m (Node j js b)
 instance
