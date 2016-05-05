@@ -92,33 +92,33 @@ class InsertEntityGraph a backend | a -> backend where
 instance
   (InsertEntityElement a backend) =>
   InsertEntityGraph '[ '(i, is, a)] backend where
-  insertEntityGraph (a `Cons` Nil) = insertEntityElement a
+  insertEntityGraph (Node a `Cons` Nil) = insertEntityElement a
 -- | HGraph recursive case
 instance
   (InsertEntityElement a backend, InsertEntityGraph (b ': c) backend) =>
   InsertEntityGraph ('(i, is, a) ': b ': c) backend where
-  insertEntityGraph (a `Cons` b) = insertEntityGraph b >> insertEntityElement a
+  insertEntityGraph (Node a `Cons` b) = insertEntityGraph b >> insertEntityElement a
 
 
 class InsertEntityElement a backend | a -> backend where
   insertEntityElement ::
     (MonadIO m, PersistStore backend) =>
-    Node i is a -> ReaderT backend m ()
+    a -> ReaderT backend m ()
 
 instance
   (BaseBackend backend ~ PersistEntityBackend a) =>
   InsertEntityElement (Entity a) backend where
-  insertEntityElement (Node (Entity key val)) = insertKey key val
+  insertEntityElement (Entity key val) = insertKey key val
 instance
   (BaseBackend backend ~ PersistEntityBackend a, Traversable f) =>
   InsertEntityElement (f (Entity a)) backend where
-  insertEntityElement (Node fe) = traverse_ (\(Entity key val) -> insertKey key val) fe
+  insertEntityElement = traverse_ (\(Entity key val) -> insertKey key val)
 
 
-type family Unwrap (a :: *) where
+type family Unwrap (a :: *) :: * where
   Unwrap (Entity a) = a
   Unwrap (f (Entity a)) = f a
-type family UnwrapAll (as :: [(k, [k], *)]) where
+type family UnwrapAll (as :: [(k, [k], *)]) :: [(k, [k], *)] where
   UnwrapAll ('(i, is, a) ': as) = '(i, is, Unwrap a) ': UnwrapAll as
   UnwrapAll '[] = '[]
 
@@ -133,46 +133,45 @@ class InsertGraph (ps :: [*]) (a :: [(k, [k], *)]) (b :: [(k, [k], *)]) (backend
     Proxy ps ->
     HGraph a -> ReaderT backend m (HGraph b)
 
--- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
+-- -- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
 instance
-  ( InsertElement ps a b is backend, HasEot a, GNullify a ps (Eot a)
+  ( InsertElement a b backend, HasEot a, GNullify a ps (Eot a)
   , PointsAtR i is a '[]
   ) =>
   InsertGraph ps '[ '(i, is, a)] '[ '(i, is, b)] backend where
   insertGraph' Proxy (a `Cons` Nil) = do
-    e <- insertElement (Proxy :: Proxy ps) $ a `pointsAtR` Nil
-    pure $ e `Cons` Nil
+    e <- insertElement . unNode  $ a `pointsAtR` Nil
+    pure $ Node e `Cons` Nil
 
 -- | HGraph recursive case
 instance
   ( (i `Member` (e ': f)) ~ 'UniqueName
   , PointsAtR i is a (e ': f)
   , InsertGraph ps (b ': c) (e ': f) backend
-  , InsertElement ps a d is backend
+  , InsertElement a d backend
   ) =>
   InsertGraph ps ('(i, is, a) ': b ': c) ('(i, is, d) ': e ': f) backend where
   insertGraph' Proxy (a `Cons` b) = do
     b' <- insertGraph' (Proxy :: Proxy ps) b
-    let a' = a `pointsAtR` b'
-    a'' <- insertElement (Proxy :: Proxy ps) a'
-    pure $ a'' `Cons` b'
+    let Node a' = a `pointsAtR` b'
+    a'' <- insertElement a'
+    pure $ Node a'' `Cons` b'
 
 
-class InsertElement (ps :: [*]) (a :: *) (b :: *) (is :: [k]) (backend :: *) | a -> b, b -> a, a -> backend, b -> backend where
+class InsertElement (a :: *) (b :: *) (backend :: *) | a -> b, b -> a, a -> backend, b -> backend where
   insertElement ::
     (MonadIO m, PersistStore backend, Unwrap b ~ a) =>
-    Proxy ps ->
-    Node i is a -> ReaderT backend m (Node j js b)
+    a -> ReaderT backend m b
 instance
   (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a) =>
-  InsertElement ps a (Entity a) is backend where
-  insertElement Proxy (Node a) = Node . flip Entity a <$> insert a
+  InsertElement a (Entity a) backend where
+  insertElement a = flip Entity a <$> insert a
 instance
   (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, Traversable f, Applicative f) =>
-  InsertElement ps (f a) (f (Entity a)) is backend where
-  insertElement Proxy (Node fa) = do
+  InsertElement (f a) (f (Entity a)) backend where
+  insertElement fa = do
     fid <- traverse insert fa
-    pure $ Node (Entity <$> fid <*> fa)
+    pure $ Entity <$> fid <*> fa
 
 
 instance (ToBackendKey SqlBackend a) => Arbitrary (Key a) where
