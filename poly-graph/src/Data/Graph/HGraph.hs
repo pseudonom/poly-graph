@@ -67,7 +67,7 @@ class FieldPointsAt a b where
 -- | "Read-only" pattern allows convenient destructuring while encouraging preservation
 -- linkage invariant
 infixr 5 :<
-pattern (:<) :: Member i b ~ 'UniqueName => a -> HGraph b -> HGraph ('(i, is, a) ': b)
+-- pattern (:<) :: Member i b ~ 'UniqueName => a -> HGraph b -> HGraph ('(i, is, a) ': b)
 pattern a :< b <- Node a `Cons` b
 
 -- | We don't strictly need @pointedFrom@ but it makes our errors much more helpful.
@@ -136,9 +136,9 @@ class PointsAtRInternal
 type Never = Proxy
 type Always = Identity
 
-pattern Always :: a -> Always a
+-- pattern Always :: a -> Always a
 pattern Always a = Identity a
-pattern Never :: Never a
+-- pattern Never :: Never a
 pattern Never = Proxy
 
 _Always :: Lens' (Always a) a
@@ -217,8 +217,7 @@ instance Arbitrary (RawGraph '[]) where
 instance
   ((i `Member` b) ~ 'UniqueName, Arbitrary (Node i is a), Arbitrary (RawGraph b)) =>
   Arbitrary (RawGraph ('(i, is, a) ': b)) where
-  arbitrary = do
-    RawGraph <$> (Cons <$> arbitrary <*> (unRawGraph <$> arbitrary))
+  arbitrary = RawGraph <$> (Cons <$> arbitrary <*> (unRawGraph <$> arbitrary))
 
 instance Arbitrary (HGraph '[]) where
   arbitrary = pure Nil

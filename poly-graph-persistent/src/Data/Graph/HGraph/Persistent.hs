@@ -12,8 +12,6 @@
 -- Pattern synonyms and exhaustivity checking don't work well together
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
--- TODO: Remove this once we're using the official TypeError
-{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 
 module Data.Graph.HGraph.Persistent where
 
