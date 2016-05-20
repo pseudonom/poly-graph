@@ -8,6 +8,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -248,3 +249,17 @@ type family Line' (as :: [*]) :: [(*, [*], *)] where
   Line' (k ': l ': m) = Ty k '[l] ': Line' (l ': m)
 
 type Ty a b = '(a, b, a)
+
+infixr 5 :++
+type family (a :: [k]) :++ (b :: [k]) :: [k] where
+   '[] :++ ys = ys
+   (x ': xs) :++ ys = x ': (xs :++ ys)
+type family Concat (as :: [[k]]) :: [k] where
+  Concat '[] = '[]
+  Concat (x ': xs) = x :++ Concat xs
+
+composeAll :: [a -> a] -> a -> a
+composeAll = foldl (.) id
+
+graphFragments :: Proxy (ass :: [[(k, [k], *)]]) -> [HGraph bs -> HGraph bs] -> (Proxy (Concat ass), HGraph bs -> HGraph bs)
+graphFragments Proxy fs = (Proxy, composeAll fs)

@@ -3,10 +3,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 -- Pattern synonyms and exhaustivity checking don't work well together
@@ -16,13 +17,14 @@
 module Data.Graph.HGraph.Persistent where
 
 import Control.Monad.Trans.Reader (ReaderT)
-import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Foldable (traverse_)
 import Data.Proxy
 import Database.Persist
 import Database.Persist.Sql
 import Generics.Eot (Eot, HasEot)
 import GHC.TypeLits hiding (TypeError)
+import Test.QuickCheck.Gen (generate)
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
 
 import Data.Graph.HGraph
@@ -176,3 +178,10 @@ instance (ToBackendKey SqlBackend a) => Arbitrary (Key a) where
   arbitrary = toSqlKey <$> arbitrary
 instance (PersistEntity a, Arbitrary (Key a), Arbitrary a) => Arbitrary (Entity a) where
   arbitrary = Entity <$> arbitrary <*> arbitrary
+
+insertGraphFromFragments
+  :: (MonadIO m, Arbitrary (RawGraph z), z ~ UnwrapAll y, InsertGraph '[] z y SqlBackend)
+  => Proxy y -> (HGraph z -> HGraph z) -> ReaderT SqlBackend m (HGraph z, HGraph y)
+insertGraphFromFragments Proxy f = do
+  graph <- liftIO (f . unRawGraph <$> generate arbitrary)
+  (graph,) <$> insertGraph graph
