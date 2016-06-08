@@ -12,7 +12,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 -- Pattern synonyms and exhaustivity checking don't work well together
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Graph.HGraph.Persistent where
 
@@ -21,7 +20,6 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Foldable (traverse_)
 import Data.Proxy
 import Database.Persist
-import Database.Persist.Sql
 import Generics.Eot (Eot, HasEot)
 import GHC.TypeLits hiding (TypeError)
 import Test.QuickCheck.Gen (generate)
@@ -83,35 +81,35 @@ instance (a `DispatchOnTyCons` b) => PointsAtInternal Entity' (Entity a) b where
 instance (a `PointsAt` Entity b) => PointsAtInternal NoTyCon a (Entity b) where
   pointsAtInternal Proxy a b = a `pointsAt` b
 
-class InsertEntityGraph a backend | a -> backend where
+class InsertEntityGraph a backend baseBackend | a -> baseBackend where
   insertEntityGraph ::
-    (MonadIO m, PersistStore backend) =>
+    (MonadIO m, PersistStoreWrite backend) =>
     HGraph a -> ReaderT backend m ()
 
 -- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
 instance
-  (InsertEntityElement a backend) =>
-  InsertEntityGraph '[ '(i, is, a)] backend where
+  (InsertEntityElement a backend baseBackend, BaseBackend backend ~ baseBackend) =>
+  InsertEntityGraph '[ '(i, is, a)] backend baseBackend where
   insertEntityGraph (Node a `Cons` Nil) = insertEntityElement a
 -- | HGraph recursive case
 instance
-  (InsertEntityElement a backend, InsertEntityGraph (b ': c) backend) =>
-  InsertEntityGraph ('(i, is, a) ': b ': c) backend where
+  (InsertEntityElement a backend baseBackend, InsertEntityGraph (b ': c) backend baseBackend, BaseBackend backend ~ baseBackend) =>
+  InsertEntityGraph ('(i, is, a) ': b ': c) backend baseBackend where
   insertEntityGraph (Node a `Cons` b) = insertEntityGraph b >> insertEntityElement a
 
 
-class InsertEntityElement a backend | a -> backend where
+class InsertEntityElement a backend baseBackend | a -> baseBackend where
   insertEntityElement ::
-    (MonadIO m, PersistStore backend) =>
+    (MonadIO m) =>
     a -> ReaderT backend m ()
 
 instance
-  (BaseBackend backend ~ PersistEntityBackend a) =>
-  InsertEntityElement (Entity a) backend where
+  (PersistEntityBackend a ~ baseBackend, BaseBackend backend ~ baseBackend, PersistStoreWrite backend) =>
+  InsertEntityElement (Entity a) backend baseBackend where
   insertEntityElement (Entity key val) = insertKey key val
 instance
-  (BaseBackend backend ~ PersistEntityBackend a, Traversable f) =>
-  InsertEntityElement (f (Entity a)) backend where
+  (Traversable f, PersistEntityBackend a ~ baseBackend, BaseBackend backend ~ baseBackend, PersistStoreWrite backend) =>
+  InsertEntityElement (f (Entity a)) backend baseBackend where
   insertEntityElement = traverse_ (\(Entity key val) -> insertKey key val)
 
 
@@ -123,22 +121,26 @@ type family UnwrapAll (as :: [(k, [k], *)]) :: [(k, [k], *)] where
   UnwrapAll '[] = '[]
 
 insertGraph ::
-  (MonadIO m, InsertGraph '[] (UnwrapAll b) b backend, PersistStoreWrite backend) =>
+  (MonadIO m, InsertGraph '[] (UnwrapAll b) b backend baseBackend, BaseBackend backend ~ baseBackend) =>
   HGraph (UnwrapAll b) -> ReaderT backend m (HGraph b)
 insertGraph = insertGraph' (Proxy :: Proxy ('[] :: [*]))
 
-class InsertGraph (ps :: [*]) (a :: [(k, [k], *)]) (b :: [(k, [k], *)]) (backend :: *) | a -> b, b -> a, a -> backend , b -> backend where
+class
+  (BaseBackend backend ~ baseBackend, PersistStoreWrite backend) =>
+  InsertGraph (ps :: [*]) (a :: [(k, [k], *)]) (b :: [(k, [k], *)]) (backend :: *) (baseBackend :: *)
+  | a -> b, b -> a, a -> baseBackend , b -> baseBackend where
   insertGraph' ::
-    (MonadIO m, PersistStore backend, UnwrapAll b ~ a) =>
-    Proxy ps ->
-    HGraph a -> ReaderT backend m (HGraph b)
+    (MonadIO m, UnwrapAll b ~ a) =>
+    Proxy ps -> HGraph a -> ReaderT backend m (HGraph b)
 
 -- -- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
 instance
-  ( InsertElement a b backend, HasEot a, GNullify a ps (Eot a)
+  ( InsertElement a b backend baseBackend, HasEot a, GNullify a ps (Eot a)
   , PointsAtR i is a '[]
+  , BaseBackend backend ~ baseBackend
+  , PersistStoreWrite backend
   ) =>
-  InsertGraph ps '[ '(i, is, a)] '[ '(i, is, b)] backend where
+  InsertGraph ps '[ '(i, is, a)] '[ '(i, is, b)] backend baseBackend where
   insertGraph' Proxy (a `Cons` Nil) = do
     e <- insertElement . unNode  $ a `pointsAtR` Nil
     pure $ Node e `Cons` Nil
@@ -147,10 +149,10 @@ instance
 instance
   ( (i `Member` (e ': f)) ~ 'UniqueName
   , PointsAtR i is a (e ': f)
-  , InsertGraph ps (b ': c) (e ': f) backend
-  , InsertElement a d backend
+  , InsertGraph ps (b ': c) (e ': f) backend baseBackend
+  , InsertElement a d backend baseBackend
   ) =>
-  InsertGraph ps ('(i, is, a) ': b ': c) ('(i, is, d) ': e ': f) backend where
+  InsertGraph ps ('(i, is, a) ': b ': c) ('(i, is, d) ': e ': f) backend baseBackend where
   insertGraph' Proxy (a `Cons` b) = do
     b' <- insertGraph' (Proxy :: Proxy ps) b
     let Node a' = a `pointsAtR` b'
@@ -158,30 +160,25 @@ instance
     pure $ Node a'' `Cons` b'
 
 
-class InsertElement (a :: *) (b :: *) (backend :: *) | a -> b, b -> a, a -> backend, b -> backend where
+class
+  InsertElement (a :: *) (b :: *) (backend :: *) (baseBackend :: *) | a -> b, b -> a, a -> baseBackend, b -> baseBackend where
   insertElement ::
-    (MonadIO m, PersistStore backend, Unwrap b ~ a) =>
+    (MonadIO m, Unwrap b ~ a) =>
     a -> ReaderT backend m b
 instance
-  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a) =>
-  InsertElement a (Entity a) backend where
+  (PersistEntity a, PersistEntityBackend a ~ baseBackend, BaseBackend backend ~ baseBackend, PersistStoreWrite backend) =>
+  InsertElement a (Entity a) backend baseBackend where
   insertElement a = flip Entity a <$> insert a
 instance
-  (PersistEntityBackend a ~ BaseBackend backend, PersistEntity a, Traversable f, Applicative f) =>
-  InsertElement (f a) (f (Entity a)) backend where
+  (PersistEntity a, Traversable f, Applicative f, PersistEntityBackend a ~ baseBackend, BaseBackend backend ~ baseBackend, PersistStoreWrite backend) =>
+  InsertElement (f a) (f (Entity a)) backend baseBackend where
   insertElement fa = do
     fid <- traverse insert fa
     pure $ Entity <$> fid <*> fa
 
-
-instance (ToBackendKey SqlBackend a) => Arbitrary (Key a) where
-  arbitrary = toSqlKey <$> arbitrary
-instance (PersistEntity a, Arbitrary (Key a), Arbitrary a) => Arbitrary (Entity a) where
-  arbitrary = Entity <$> arbitrary <*> arbitrary
-
 insertGraphFromFragments
-  :: (MonadIO m, Arbitrary (RawGraph z), z ~ UnwrapAll y, InsertGraph '[] z y SqlBackend)
-  => Proxy y -> (HGraph z -> HGraph z) -> ReaderT SqlBackend m (HGraph z, HGraph y)
+  :: (MonadIO m, Arbitrary (RawGraph z), z ~ UnwrapAll y, InsertGraph '[] z y backend baseBackend, PersistStoreWrite backend, BaseBackend backend ~ baseBackend)
+  => Proxy y -> (HGraph z -> HGraph z) -> ReaderT backend m (HGraph z, HGraph y)
 insertGraphFromFragments Proxy f = do
   graph <- liftIO (f . unRawGraph <$> generate arbitrary)
   (graph,) <$> insertGraph graph

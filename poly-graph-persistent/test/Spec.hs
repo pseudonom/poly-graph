@@ -41,6 +41,7 @@ import Test.QuickCheck.Gen (generate)
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances ()
 import Data.Graph.HGraph.Persistent
+import Data.Graph.HGraph.Persistent.Instances ()
 import Data.Graph.HGraph.TH
 
 db :: SqlPersistT (LoggingT (ResourceT IO)) a -> IO ()
