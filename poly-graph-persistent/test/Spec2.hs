@@ -25,7 +25,7 @@ import Test.Hspec
 import Control.Lens hiding ((:<), _head, _tail)
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO)
-import Control.Monad.Logger (LoggingT(..))
+import Control.Monad.Logger (LoggingT(..), runStderrLoggingT)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT, MonadBaseControl)
@@ -35,13 +35,14 @@ import Data.Text (Text, pack)
 import Data.Time.Calendar
 import Data.Time.Clock
 import Database.Persist
+import Database.Persist.Postgresql
 import Database.Persist.Sql
-import Database.Persist.Sqlite (withSqlitePool)
 import Database.Persist.TH
 import GHC.Generics (Generic)
 import System.Log.FastLogger (fromLogStr)
-import Test.QuickCheck.Arbitrary (Arbitrary(..))
+import Test.QuickCheck.Arbitrary (Arbitrary(..), arbitrarySizedNatural)
 import Test.QuickCheck.Gen (generate)
+import Text.Shakespeare.Text (st)
 
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances ()
@@ -49,14 +50,26 @@ import Data.Graph.HGraph.Persistent
 import Data.Graph.HGraph.Persistent.Instances ()
 import Data.Graph.HGraph.TH
 
-db :: SqlPersistT (LoggingT (ResourceT IO)) a -> IO ()
-db actions = runResourceT $ runConn $ actions >> transactionUndo
+connString :: ConnectionString
+connString = "host=localhost port=5432 user=test dbname=poly-graph password=test"
 
-runConn :: (MonadIO m, MonadBaseControl IO m) => SqlPersistT (LoggingT m) t -> m ()
-runConn f =
-  void . flip runLoggingT (\_ _ _ s -> B8.putStrLn $ fromLogStr s) $
-  withSqlitePool "test/testdb.sqlite3" 1 $
-  runSqlPool f
+runConn :: (MonadIO m, MonadBaseControl IO m) => SqlPersistT (LoggingT m) t -> m t
+runConn = runStderrLoggingT . withPostgresqlConn connString . runSqlConn
+
+db :: SqlPersistT (LoggingT IO) () -> IO ()
+db actions = runConn $ actions >> resetSequences >> transactionUndo
+
+resetSequences :: (MonadIO m) => SqlPersistT (LoggingT m) [Single Int]
+resetSequences =
+  rawSql
+    [st|
+      SELECT SETVAL('district_id_seq', 1, false);
+      SELECT SETVAL('school_id_seq', 1, false);
+      SELECT SETVAL('student_id_seq', 1, false);
+      SELECT SETVAL('teacher_id_seq', 1, false);
+      SELECT SETVAL('multi_pointer_id_seq', 1, false);
+    |]
+    []
 
 instance (Arbitrary a) => Arbitrary (Always a) where
   arbitrary = pure <$> arbitrary
@@ -70,7 +83,7 @@ instance Arbitrary Text where
 _entityKey :: Lens' (Entity a) (Key a)
 _entityKey pure' (Entity i e) = (\i' -> Entity i' e) <$> pure' i
 
-share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistUpperCase|
+share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistLowerCase|
   District
     name Text
     createdAt UTCTime
@@ -107,9 +120,9 @@ instance Arbitrary Student where
 instance Arbitrary MultiPointer where
   arbitrary = MultiPointer <$> arbitrary <*> arbitrary
 instance Arbitrary Day where
-  arbitrary = ModifiedJulianDay <$> arbitrary
+  arbitrary = ModifiedJulianDay <$> arbitrarySizedNatural
 instance Arbitrary DiffTime where
-  arbitrary = secondsToDiffTime <$> arbitrary
+  arbitrary = secondsToDiffTime <$> arbitrarySizedNatural
 instance Arbitrary UTCTime where
   arbitrary = UTCTime <$> arbitrary <*> arbitrary
 
@@ -121,7 +134,7 @@ instance School `PointsAt` Maybe (Entity District)
 instance MultiPointer `PointsAt` Entity Teacher
 instance MultiPointer `PointsAt` Entity School
 
-type M = ReaderT SqlBackend (LoggingT (ResourceT IO))
+type M = ReaderT SqlBackend (LoggingT IO)
 
 studentIsInDistrict :: Entity Student -> Entity Teacher -> Entity School -> Entity District -> Bool
 studentIsInDistrict
@@ -170,9 +183,9 @@ main = do
       it "using 'Arbitrary` can help, especially with that last problem. But now we have to set each FK by hand" $ db $ do
         district@(Entity districtId _) <- insertEntity =<< arbitrary'
         school1@(Entity schoolId1 _) <- insertEntity . set schoolDistrictId (Just districtId) =<< arbitrary'
-        school2@(Entity (schoolId2 :: Key School) _) <- insertEntity =<< arbitrary'
+        school2@(Entity schoolId2 _) <- insertEntity . set schoolDistrictId (Just districtId) =<< arbitrary'
         teacher1@(Entity teacherId1 _) <- insertEntity . set teacherSchoolId schoolId1 . set teacherName "Foo" =<< arbitrary'
-        teacher2@(Entity (teacherId2 :: Key Teacher) _) <- insertEntity =<< arbitrary'
+        teacher2@(Entity teacherId2 _) <- insertEntity . set teacherSchoolId schoolId2 =<< arbitrary'
         student@(Entity studentId _) <- insertEntity . set studentTeacherId teacherId1 . set studentName "Bar" =<< arbitrary'
         liftIO $ studentIsInDistrict student teacher1 school1 district `shouldBe` True
       it "enter HGraph" $ db $ do
