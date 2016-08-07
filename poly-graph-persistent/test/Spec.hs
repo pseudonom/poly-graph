@@ -126,7 +126,7 @@ main = do
           unRawGraph <$> generate arbitrary
             :: IO (Line '[Student, Teacher, School])
         let graph' = graph & pluck (Proxy :: Proxy School) . schoolName .~ "Hello"
-        print graph'
+        pure ()
       -- it "doesn't type check with a dangling (non-`Maybe`) key" $ db $ do
       --   graph <- liftIO (generate arbitrary) :: M (HGraph '[ '("Teacher", '[], Teacher) ])
       --   liftIO $ print graph
@@ -139,7 +139,7 @@ main = do
         graph <-
           generate arbitrary
             :: IO (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District)])
-        print graph
+        pure ()
       it "defaults only missing keys to nothing" $ db $ do
         arbGraph <- unRawGraph <$> liftIO (generate arbitrary)
         entGraph <-
@@ -221,7 +221,7 @@ main = do
                     , '("Never2", '[], Never (Entity SelfRef))
                     ]
                  )
-        liftIO $ print graph'
+        pure ()
 
       it "Manual creation and insertion should produce the same results as automatic creation and insertion" $ db $ do
         void . insert $ District "bump id to prove we're doing something mildly interesting"

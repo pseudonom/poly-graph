@@ -194,7 +194,7 @@ main = do
         (st :< te :< sc :< Nil) <-
           insertGraph arbGraph :: M (Line '[Entity Student, Entity Teacher, Entity School])
         liftIO $ sc ^. _entityVal . schoolDistrictId  `shouldBe` Nothing
-      it "but if we omit entities that are required, we get a type error" $ db $
+      it "but if we omit entities that are required, we get a type error" $ db $ do
         -- arbGraph <- unRawGraph <$> arbitrary'
         -- (st :< te :< Nil) <-
         --   insertGraph arbGraph :: M (Line '[Entity Student, Entity Teacher])
@@ -213,4 +213,4 @@ main = do
                  , '("District", '[], Maybe (Entity District))
                  ]
               )
-        liftIO $ print arbGraph
+        pure ()
