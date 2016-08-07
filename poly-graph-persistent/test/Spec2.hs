@@ -158,7 +158,7 @@ main = do
         teacher1@(Entity teacherId1 _) <- insertEntity $ Teacher "teacher1" now schoolId2
         teacher2@(Entity teacherId2 _) <- insertEntity $ Teacher "teacher2" now schoolId2
         student@(Entity studentId _) <- insertEntity $ Student "student1" now teacherId1
-        liftIO $ studentIsInDistrict student teacher1 school1 district `shouldBe` True
+        liftIO $ studentIsInDistrict student teacher1 school1 district `shouldBe` False
       it "furthermore, it's not obvious which properties of the item we care about" $ db $ do
         district@(Entity districtId _) <- insertEntity $ District "districtName" now
         school1@(Entity schoolId1 _) <- insertEntity $ School "school1" now (Just districtId)
@@ -166,7 +166,7 @@ main = do
         teacher1@(Entity teacherId1 _) <- insertEntity $ Teacher "1" now schoolId1
         teacher2@(Entity teacherId2 _) <- insertEntity $ Teacher "teacher2" now schoolId2
         student@(Entity studentId _) <- insertEntity $ Student "1" now teacherId1
-        liftIO $ studentIsInDistrict student teacher1 school1 district `shouldBe` True
+        liftIO $ studentIsInDistrict student teacher1 school1 district `shouldBe` False
       it "using 'Arbitrary` can help, especially with that last problem. But now we have to set each FK by hand" $ db $ do
         district@(Entity districtId _) <- insertEntity =<< arbitrary'
         school1@(Entity schoolId1 _) <- insertEntity . set schoolDistrictId (Just districtId) =<< arbitrary'
