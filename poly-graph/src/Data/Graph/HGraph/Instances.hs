@@ -17,6 +17,7 @@
 module Data.Graph.HGraph.Instances where
 
 import Data.Proxy
+import GHC.TypeLits
 
 import Data.Graph.HGraph
 
@@ -42,32 +43,28 @@ instance
   pointsAtDispatcher = pointsAtInternal (Proxy :: Proxy lf)
 -- | The left hand side isn't higher kinded.
 instance
-  (PointsAtInternal NoTyCon a b) =>
+  (PointsAtInternal "NoTyCon" a b) =>
   DispatchOnTyCons a b where
-  pointsAtDispatcher = pointsAtInternal (Proxy :: Proxy NoTyCon)
-
-data NoTyCon
-data SomeFunctor
-data Never'
+  pointsAtDispatcher = pointsAtInternal (Proxy :: Proxy "NoTyCon")
 
 -- | Collapsing some of the functors on the left hand side of @PointsAt@ into @SomeFunctor@
 -- saves us from defining some duplicative instances.
-type family HandleLeft (f :: * -> *) :: *
-type instance HandleLeft Maybe = SomeFunctor
-type instance HandleLeft [] = SomeFunctor
+type family HandleLeft (f :: * -> *) :: Symbol
+type instance HandleLeft Maybe = "SomeFunctor"
+type instance HandleLeft [] = "SomeFunctor"
 
 -- | Helpers that automatically provide certain additional @PointsAt@ instances
 -- in terms of a few base @instances@.
-class PointsAtInternal leftTyCon a b where
+class PointsAtInternal (leftTyCon :: Symbol) a b where
   pointsAtInternal :: Proxy leftTyCon -> a -> b -> a
 
 instance
   (a `PointsAt` Maybe b) =>
-  PointsAtInternal NoTyCon a (Maybe b) where
+  PointsAtInternal "NoTyCon" a (Maybe b) where
   pointsAtInternal Proxy a b = a `pointsAt` b
 
 -- | Unless otherwise specified, functors @pointAt@ via @fmap@.
 instance
   (Functor f, a `DispatchOnTyCons` b) =>
-  PointsAtInternal SomeFunctor (f a) b where
+  PointsAtInternal "SomeFunctor" (f a) b where
   pointsAtInternal Proxy fa b = (`pointsAtDispatcher` b) <$> fa

@@ -62,9 +62,7 @@ instance
   Nullify pointedFrom pointedTo where
   nullify Proxy = id
 
-data Entity'
-
-type instance HandleLeft Entity = Entity'
+type instance HandleLeft Entity = "Entity"
 
 _entityVal :: Lens' (Entity a) a
 _entityVal pure' (Entity i e) = (\e' -> Entity i e') <$> pure' e
@@ -73,9 +71,9 @@ type instance Base (Entity a) = a
 instance ToBase (Entity a) where
   base = _entityVal
 
-instance (a `DispatchOnTyCons` b) => PointsAtInternal Entity' (Entity a) b where
+instance (a `DispatchOnTyCons` b) => PointsAtInternal "Entity" (Entity a) b where
   pointsAtInternal Proxy (Entity i a) b = Entity i $ a `pointsAtDispatcher` b
-instance (a `PointsAt` Entity b) => PointsAtInternal NoTyCon a (Entity b) where
+instance (a `PointsAt` Entity b) => PointsAtInternal "NoTyCon" a (Entity b) where
   pointsAtInternal Proxy a b = a `pointsAt` b
 
 class InsertEntityGraph a backend baseBackend | a -> baseBackend where
