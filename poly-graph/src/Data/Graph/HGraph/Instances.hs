@@ -61,30 +61,13 @@ type instance HandleLeft [] = SomeFunctor
 class PointsAtInternal leftTyCon a b where
   pointsAtInternal :: Proxy leftTyCon -> a -> b -> a
 
-instance {-# OVERLAPPABLE #-}
-  (PointsAtInternal NoTyCon a (NormalizedT (c b)), Normalize (c b)) =>
-  PointsAtInternal NoTyCon a (c b) where
-  pointsAtInternal p a c = pointsAtInternal p a (normalize c)
+instance
+  (a `PointsAt` Maybe b) =>
+  PointsAtInternal NoTyCon a (Maybe b) where
+  pointsAtInternal Proxy a b = a `pointsAt` b
 
 -- | Unless otherwise specified, functors @pointAt@ via @fmap@.
 instance
   (Functor f, a `DispatchOnTyCons` b) =>
   PointsAtInternal SomeFunctor (f a) b where
   pointsAtInternal Proxy fa b = (`pointsAtDispatcher` b) <$> fa
-
--- | This class provides a generalized framework for handling multiple similar types.
--- That is, instead of having to write a separate @PointsAtInternal@ instance for each combination of types,
--- we can just specify a base case and how to reduce the other types to that base case.
-class Normalize a where
-  type NormalizedT a
-  normalize :: a ->  NormalizedT a
-
--- | If you define @NormalizedT a = a@, you must also define a @PointsAtInternal@ instance to handle it.
--- If you don't, you'll just end up spinning as @pointsAtInternal@ calls itself.
-instance Normalize (Maybe a) where
-  type NormalizedT (Maybe a) = Maybe a
-  normalize = id
-instance
-  (a `PointsAt` Maybe b) =>
-  PointsAtInternal NoTyCon a (Maybe b) where
-  pointsAtInternal Proxy a b = a `pointsAt` b

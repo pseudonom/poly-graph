@@ -65,9 +65,6 @@ instance
 data Entity'
 
 type instance HandleLeft Entity = Entity'
-instance Normalize (Entity a) where
-  type NormalizedT (Entity a) = Entity a
-  normalize = id
 
 _entityVal :: Lens' (Entity a) a
 _entityVal pure' (Entity i e) = (\e' -> Entity i e') <$> pure' e
