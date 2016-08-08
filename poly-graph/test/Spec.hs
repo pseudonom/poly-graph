@@ -68,23 +68,9 @@ main = hspec $ do
       node = Node1 (Tagged 1) (Just $ Tagged 1) :: Node1 'Self 'Self
       plainToPlain = node `pointsAtDispatcher` node
       plainToMaybe = node `pointsAtDispatcher` Just node
-      plainToAlways = node `pointsAtDispatcher` Always node
-      plainToNever = node `pointsAtDispatcher` (Never :: Never (Node1 'Self 'Self))
 
       maybeToPlain = Just node `pointsAtDispatcher` node
       maybeToMaybe = Just node `pointsAtDispatcher` Just node
-      maybeToAlways = Just node `pointsAtDispatcher` Always node
-      maybeToNever = Just node `pointsAtDispatcher` (Never :: Never (Node1 'Self 'Self))
-
-      alwaysToPlain = Always node `pointsAtDispatcher` node
-      alwaysToMaybe = Always node `pointsAtDispatcher` Just node
-      alwaysToAlways = Always node `pointsAtDispatcher` Always node
-      alwaysToNever = Always node `pointsAtDispatcher` (Never :: Never (Node1 'Self 'Self))
-
-      neverToPlain = (Never :: Never (Node1 'Self 'Self)) `pointsAtDispatcher` node
-      neverToMaybe = (Never :: Never (Node1 'Self 'Self)) `pointsAtDispatcher` Just node
-      neverToAlways = (Never :: Never (Node1 'Self 'Self)) `pointsAtDispatcher` Always node
-      neverToNever = (Never :: Never (Node1 'Self 'Self)) `pointsAtDispatcher` (Never :: Never (Node1 'Self 'Self))
 
   describe "~>" $ do
     it "works for simple chains" $

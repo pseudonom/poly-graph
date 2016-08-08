@@ -53,8 +53,6 @@ data Never'
 -- | Collapsing some of the functors on the left hand side of @PointsAt@ into @SomeFunctor@
 -- saves us from defining some duplicative instances.
 type family HandleLeft (f :: * -> *) :: *
-type instance HandleLeft Never = Never'
-type instance HandleLeft Always = SomeFunctor
 type instance HandleLeft Maybe = SomeFunctor
 type instance HandleLeft [] = SomeFunctor
 
@@ -67,11 +65,6 @@ instance {-# OVERLAPPABLE #-}
   (PointsAtInternal NoTyCon a (NormalizedT (c b)), Normalize (c b)) =>
   PointsAtInternal NoTyCon a (c b) where
   pointsAtInternal p a c = pointsAtInternal p a (normalize c)
-
--- | @Never@ can point at anything without incurring any constraints because it's a no-op.
-instance
-  PointsAtInternal Never' (Never a) b where
-  pointsAtInternal Proxy Never _ = Never
 
 -- | Unless otherwise specified, functors @pointAt@ via @fmap@.
 instance
@@ -86,13 +79,6 @@ class Normalize a where
   type NormalizedT a
   normalize :: a ->  NormalizedT a
 
--- | A normalization group. @Always@ and @Never@ can be reduced to @Maybe@.
-instance Normalize (Always a) where
-  type NormalizedT (Always a) = Maybe a
-  normalize (Always a) = Just a
-instance Normalize (Never (a :: *)) where
-  type NormalizedT (Never a) = Maybe a
-  normalize Never = Nothing
 -- | If you define @NormalizedT a = a@, you must also define a @PointsAtInternal@ instance to handle it.
 -- If you don't, you'll just end up spinning as @pointsAtInternal@ calls itself.
 instance Normalize (Maybe a) where

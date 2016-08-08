@@ -65,11 +65,6 @@ resetSequences =
     |]
     []
 
-instance (Arbitrary a) => Arbitrary (Always a) where
-  arbitrary = pure <$> arbitrary
-instance Arbitrary (Never a) where
-  arbitrary = pure Never
-
 instance Arbitrary Text where
   arbitrary = pack . filter (not . isBadChar) <$> arbitrary
     where isBadChar x = x == '\NUL' || x == '\\' -- Make postgres vomit
@@ -126,6 +121,7 @@ instance SelfRef `PointsAt` Entity SelfRef
 instance SelfRef `PointsAt` Maybe (Entity SelfRef)
 instance Student `PointsAt` Entity Teacher
 instance Teacher `PointsAt` Entity School
+instance School `PointsAt` Entity District
 instance School `PointsAt` Maybe (Entity District)
 instance District `PointsAt` Entity State
 instance District `PointsAt` Maybe (Entity State)
@@ -158,7 +154,7 @@ main = do
       it "generates arbitrary entities" $ do
         _ <-
           generate arbitrary
-            :: IO (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District), Entity State])
+            :: IO (Line '[Entity Student, Entity Teacher, Entity School, Entity District, Entity State])
         pure ()
       it "defaults only missing keys to nothing" $ db $ do
         arbGraph <- unRawGraph <$> liftIO (generate arbitrary)
@@ -185,21 +181,20 @@ main = do
       it "defaults `Maybe` keys to `Nothing` during `Arbitrary` creation when they're in the middle of the graph" $ do
         arbGraph <-
           generate arbitrary
-          :: IO (HGraph '[ '(1, '[], Always (Entity SelfRef)), '(2, '[], Maybe (Entity SelfRef)) ])
-        (arbGraph ^? _head . _Always . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+          :: IO (HGraph '[ '(1, '[], Entity SelfRef), '(2, '[], Maybe (Entity SelfRef)) ])
+        (arbGraph ^? _head . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "defaults `Maybe` keys to `Nothing` during insertion when they're in the middle of the graph" $ db $ do
         entGraph <-
           insertGraph . unRawGraph =<< liftIO (generate arbitrary)
-          :: M (HGraph '[ '(1, '[], Always (Entity SelfRef)), '(2, '[], Maybe (Entity SelfRef)) ])
-        liftIO $ (entGraph ^? _head . _Always . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+          :: M (HGraph '[ '(1, '[], Entity SelfRef), '(2, '[], Maybe (Entity SelfRef)) ])
+        liftIO $ (entGraph ^? _head . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "works with Maybe key to plain" $ db $ do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
             :: M (
                  HGraph
                    '[ '("Plain1", '["Plain2"], SelfRef)
-                    , '("Plain2", '["Never"], SelfRef)
-                    , '("Never", '[], Never SelfRef)
+                    , '("Plain2", '[], SelfRef)
                     ]
                  )
         graph' <-
@@ -207,8 +202,7 @@ main = do
             :: M (
                  HGraph
                    '[ '("Plain1", '["Plain2"], Entity SelfRef)
-                    , '("Plain2", '["Never"], Entity SelfRef)
-                    , '("Never", '[], Never (Entity SelfRef))
+                    , '("Plain2", '[], Entity SelfRef)
                     ]
                  )
         liftIO $
@@ -219,28 +213,24 @@ main = do
           unRawGraph <$> liftIO (generate arbitrary)
             :: M (
                  HGraph
-                   '[ '("Plain1", '["Maybe1", "Always1", "Never1", "Plain2"], SelfRef)
-                    , '("Maybe1", '["Always1", "Never1", "Plain2", "Maybe2"], Maybe SelfRef)
-                    , '("Always1", '["Never1", "Plain2", "Maybe2", "Always2"], Always SelfRef)
-                    , '("Never1", '["Plain2", "Maybe2", "Always2", "Never2"], Never SelfRef)
-                    , '("Plain2", '["Never2"], SelfRef)
-                    , '("Maybe2", '["Never2"], Maybe SelfRef)
-                    , '("Always2", '["Never2"], Always SelfRef)
-                    , '("Never2", '[], Never SelfRef)
+                   '[ '("Plain1", '["Maybe1", "Always1", "Plain2"], SelfRef)
+                    , '("Maybe1", '["Always1", "Plain2", "Maybe2"], Maybe SelfRef)
+                    , '("Always1", '["Plain2", "Maybe2", "Always2"], SelfRef)
+                    , '("Plain2", '[], SelfRef)
+                    , '("Maybe2", '[], Maybe SelfRef)
+                    , '("Always2", '[], SelfRef)
                     ]
                  )
         _ <-
           insertGraph graph
             :: M (
                  HGraph
-                   '[ '("Plain1", '["Maybe1", "Always1", "Never1", "Plain2"], Entity SelfRef)
-                    , '("Maybe1", '["Always1", "Never1", "Plain2", "Maybe2"], Maybe (Entity SelfRef))
-                    , '("Always1", '["Never1", "Plain2", "Maybe2", "Always2"], Always (Entity SelfRef))
-                    , '("Never1", '["Plain2", "Maybe2", "Always2", "Never2"], Never (Entity SelfRef))
-                    , '("Plain2", '["Never2"], Entity SelfRef)
-                    , '("Maybe2", '["Never2"], Maybe (Entity SelfRef))
-                    , '("Always2", '["Never2"], Always (Entity SelfRef))
-                    , '("Never2", '[], Never (Entity SelfRef))
+                   '[ '("Plain1", '["Maybe1", "Always1", "Plain2"], Entity SelfRef)
+                    , '("Maybe1", '["Always1", "Plain2", "Maybe2"], Maybe (Entity SelfRef))
+                    , '("Always1", '["Plain2", "Maybe2", "Always2"], Entity SelfRef)
+                    , '("Plain2", '[], Entity SelfRef)
+                    , '("Maybe2", '[], Maybe (Entity SelfRef))
+                    , '("Always2", '[], Entity SelfRef)
                     ]
                  )
         pure ()
@@ -267,14 +257,14 @@ main = do
 
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
-        (st :< te :< sc :< Always di :< state :< Nil) <-
+        (st :< te :< sc :< di :< state :< Nil) <-
           insertGraph graph
             :: M (
                  Line
                    '[ Entity Student
                     , Entity Teacher
                     , Entity School
-                    , Always (Entity District)
+                    , Entity District
                     , Entity State
                     ]
                  )

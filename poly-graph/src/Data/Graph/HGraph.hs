@@ -134,34 +134,12 @@ class PointsAtRInternal
   where
   pointsAtRInternal :: Proxy originalLinks -> Proxy typesLinked -> Node i remainingLinks a -> HGraph graph -> Node i remainingLinks a
 
-type Never = Proxy
-type Always = Identity
-
--- pattern Always :: a -> Always a
-pattern Always a = Identity a
--- pattern Never :: Never a
-pattern Never = Proxy
-
-_Always :: Lens' (Always a) a
-_Always pure' (Always a) = Always <$> pure' a
-
-_Never :: Lens' (Never a) a
-_Never pure' Never = const Never <$> (pure' undefined)
-
 -- | We split out the type family because we can't create the optic for some types. For example, @Lens' (Key a) a@.
 type family Base (a :: *) :: *
 
 type instance Base (Maybe a) = Base a
 instance (ToBase a) => ToBase (Maybe a) where
   base = _Just . base
-
-type instance Base (Always a) = Base a
-instance (ToBase a) => ToBase (Always a) where
-  base = _Always . base
-
-type instance Base (Never a) = Base a
-instance (ToBase a) => ToBase (Never a) where
-  base = _Never . base
 
 class ToBase a where
   base :: Traversal' a (Base a)

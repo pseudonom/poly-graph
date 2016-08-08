@@ -71,11 +71,6 @@ resetSequences =
     |]
     []
 
-instance (Arbitrary a) => Arbitrary (Always a) where
-  arbitrary = pure <$> arbitrary
-instance Arbitrary (Never a) where
-  arbitrary = pure Never
-
 instance Arbitrary Text where
   arbitrary = pack . filter (not . isBadChar) <$> arbitrary
     where isBadChar x = x == '\NUL' || x == '\\' -- These make postgres vomit
@@ -130,6 +125,7 @@ declareBases [''MultiPointer, ''District, ''School, ''Student, ''Teacher, ''Text
 
 instance Student `PointsAt` Entity Teacher
 instance Teacher `PointsAt` Entity School
+instance School `PointsAt` Entity District
 instance School `PointsAt` Maybe (Entity District)
 instance MultiPointer `PointsAt` Entity Teacher
 instance MultiPointer `PointsAt` Entity School
@@ -190,8 +186,8 @@ main = do
         liftIO $ studentIsInDistrict student teacher1 school1 district `shouldBe` True
       it "enter HGraph" $ db $ do
         arbGraph <- unRawGraph <$> arbitrary'
-        (st :< te :< sc :< Always di :< Nil) <-
-          insertGraph arbGraph :: M (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District)])
+        (st :< te :< sc :< di :< Nil) <-
+          insertGraph arbGraph :: M (Line '[Entity Student, Entity Teacher, Entity School, Entity District])
         liftIO $ studentIsInDistrict st te sc di `shouldBe` True
       it "And we can set nested properties we care about" $ db $ do
         arbGraph <- unRawGraph <$> arbitrary'
@@ -199,8 +195,8 @@ main = do
               arbGraph
                 & pluck (Proxy :: Proxy (Entity Teacher)) . teacherName .~ "Foo"
                 & pluck (Proxy :: Proxy (Entity Student)) . studentName .~ "Bar"
-        (st :< te :< sc :< Always di :< Nil) <-
-          insertGraph arbGraph' :: M (Line '[Entity Student, Entity Teacher, Entity School, Always (Entity District)])
+        (st :< te :< sc :< di :< Nil) <-
+          insertGraph arbGraph' :: M (Line '[Entity Student, Entity Teacher, Entity School, Entity District])
         liftIO $ studentIsInDistrict st te sc di `shouldBe` True
       it "we can also omit some entities and get sensible defaulting" $ db $ do
         arbGraph <- unRawGraph <$> arbitrary'
