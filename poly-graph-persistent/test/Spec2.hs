@@ -121,8 +121,6 @@ instance Arbitrary DiffTime where
 instance Arbitrary UTCTime where
   arbitrary = UTCTime <$> arbitrary <*> arbitrary
 
-declareBases [''MultiPointer, ''District, ''School, ''Student, ''Teacher, ''Text, ''UTCTime]
-
 instance Student `PointsAt` Entity Teacher
 instance Teacher `PointsAt` Entity School
 instance School `PointsAt` Entity District

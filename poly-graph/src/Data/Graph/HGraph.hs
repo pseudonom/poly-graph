@@ -134,22 +134,26 @@ class PointsAtRInternal
   where
   pointsAtRInternal :: Proxy originalLinks -> Proxy typesLinked -> Node i remainingLinks a -> HGraph graph -> Node i remainingLinks a
 
--- | We split out the type family because we can't create the optic for some types. For example, @Lens' (Key a) a@.
-type family Base (a :: *) :: *
 
-type instance Base (Maybe a) = Base a
-instance (ToBase a) => ToBase (Maybe a) where
-  base = _Just . base
+-- | We split out the type family because we can't create the optic for some types. For example, @Lens' (Key a) a@.
+type family Base (a :: *) :: * where
+  Base (f a) = Base a
+  Base a = a
 
 class ToBase a where
   base :: Traversal' a (Base a)
 
+instance (ToBase a) => ToBase (Maybe a) where
+  base = _Just . base
+
 _Node :: Lens' (Node i is a) a
 _Node pure' (Node a) = Node <$> pure' a
 
-type instance Base (Node i is a) = Base a
 instance (ToBase a) => ToBase (Node i is a) where
   base = _Node . base
+
+instance {-# OVERLAPPABLE #-} (Base a ~ a) => ToBase a where
+  base = id
 
 -- | Base case. Doesn't point at anything.
 instance (ToBase a, Base a ~ b, HasEot b, GNullify a typesLinked (Eot b)) =>

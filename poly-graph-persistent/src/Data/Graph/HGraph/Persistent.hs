@@ -44,8 +44,6 @@ instance
   a `FieldPointsAt` b where
   fieldPointsAt = const
 
-type instance Base (Key a) = a
-
 type family TypeError (b :: k) (msg :: Symbol) (a :: k) :: j
 
 instance
@@ -67,8 +65,7 @@ type instance HandleLeft Entity = "Entity"
 _entityVal :: Lens' (Entity a) a
 _entityVal pure' (Entity i e) = (\e' -> Entity i e') <$> pure' e
 
-type instance Base (Entity a) = a
-instance ToBase (Entity a) where
+instance (Base a ~ a) => ToBase (Entity a) where
   base = _entityVal
 
 instance (a `DispatchOnTyCons` b) => PointsAtInternal "Entity" (Entity a) b where

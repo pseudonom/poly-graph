@@ -115,8 +115,6 @@ instance Arbitrary SelfRef where
 instance Arbitrary Foo where
   arbitrary = Foo "foo" <$> arbitrary <*> arbitrary
 
-declareBases [''SelfRef, ''State, ''District, ''School, ''Student, ''Teacher, ''Foo, ''Text]
-
 instance SelfRef `PointsAt` Entity SelfRef
 instance SelfRef `PointsAt` Maybe (Entity SelfRef)
 instance Student `PointsAt` Entity Teacher
