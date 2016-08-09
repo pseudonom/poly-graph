@@ -42,25 +42,10 @@ instance a `FieldPointsAt` b where
 instance Nullify pointedFrom pointedTo where
   nullify Proxy = id
 
-instance Normalize (Node1 a b) where
-  type NormalizedT (Node1 a b) = Node1 a b
-  normalize = id
-instance (a `PointsAt` Node1 b c) => PointsAtInternal NoTyCon a (Node1 b c) where
+instance (a `PointsAt` Node1 b c) => PointsAtInternal "NoTyCon" a (Node1 b c) where
   pointsAtInternal Proxy a b = a `pointsAt` b
-instance Normalize (Node2 a b c) where
-  type NormalizedT (Node2 a b c) = Node2 a b c
-  normalize = id
-instance (a `PointsAt` Node2 b c d) => PointsAtInternal NoTyCon a (Node2 b c d) where
+instance (a `PointsAt` Node2 b c d) => PointsAtInternal "NoTyCon" a (Node2 b c d) where
   pointsAtInternal Proxy a b = a `pointsAt` b
-
-type instance Base (Tagged t a) = a
-
-type instance Base (Node1 a b) = Node1 a b
-instance ToBase (Node1 a b) where
-  base = id
-type instance Base (Node2 a b c) = Node2 a b c
-instance ToBase (Node2 a b c) where
-  base = id
 
 main :: IO ()
 main = hspec $ do
