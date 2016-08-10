@@ -1,6 +1,9 @@
 packages:
 - poly-graph
 - poly-graph-persistent
+- location:
+    git: git@github.com:pseudonom/vector-sized
+    commit: 14ddc62a301292bf33e97b886ed5d09de5590822
 resolver: lts-5.9
 nix:
   pure: false

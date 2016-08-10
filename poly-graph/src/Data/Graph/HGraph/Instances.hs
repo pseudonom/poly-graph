@@ -17,6 +17,7 @@
 module Data.Graph.HGraph.Instances where
 
 import Data.Proxy
+import qualified Data.Vector.Sized as Sized
 import GHC.TypeLits
 
 import Data.Graph.HGraph
@@ -52,6 +53,7 @@ instance
 type family HandleLeft (f :: * -> *) :: Symbol
 type instance HandleLeft Maybe = "SomeFunctor"
 type instance HandleLeft [] = "SomeFunctor"
+type instance HandleLeft (Sized.Vector n) = "SizedVector"
 
 -- | Helpers that automatically provide certain additional @PointsAt@ instances
 -- in terms of a few base @instances@.
@@ -68,3 +70,8 @@ instance
   (Functor f, a `DispatchOnTyCons` b) =>
   PointsAtInternal "SomeFunctor" (f a) b where
   pointsAtInternal Proxy fa b = (`pointsAtDispatcher` b) <$> fa
+
+instance (PointsAtInternal "NoTyCon" a b) => PointsAtInternal "SizedVector" (Sized.Vector n a) (Sized.Vector n b) where
+  pointsAtInternal Proxy = Sized.zipWith pointsAtDispatcher
+instance {-# OVERLAPPABLE #-} (PointsAtInternal "NoTyCon" a b) => PointsAtInternal "SizedVector" (Sized.Vector n a) b where
+  pointsAtInternal Proxy f t = (`pointsAtDispatcher` t) <$> f

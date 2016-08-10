@@ -28,6 +28,7 @@ module Data.Graph.HGraph
 import Data.Functor.Identity
 import Data.Type.Bool
 import Data.Type.Equality
+import qualified Data.Vector.Sized as Sized
 import Data.Proxy
 import Generics.Eot (Void, fromEot, toEot, Eot, HasEot)
 import Test.QuickCheck.Arbitrary
@@ -143,12 +144,14 @@ type family Base (a :: *) :: * where
 class ToBase a where
   base :: Traversal' a (Base a)
 
+instance (ToBase a) => ToBase (Sized.Vector n a) where
+  base afb s = traverse (base afb) s
+
 instance (ToBase a) => ToBase (Maybe a) where
   base = _Just . base
 
 _Node :: Lens' (Node i is a) a
 _Node pure' (Node a) = Node <$> pure' a
-
 instance (ToBase a) => ToBase (Node i is a) where
   base = _Node . base
 

@@ -25,6 +25,7 @@ library
                      , QuickCheck
                      , profunctors
                      , template-haskell
+                     , vector-sized
   default-language:    Haskell2010
 
 test-suite poly-graph-test

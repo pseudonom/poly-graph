@@ -26,13 +26,16 @@ import Control.Monad.Logger (LoggingT(..), runStderrLoggingT)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (MonadBaseControl)
+import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
+import qualified Data.Vector.Sized as Sized
 import Database.Persist
 import Database.Persist.Postgresql
 import Database.Persist.TH
 import GHC.Generics (Generic)
-import Test.QuickCheck.Arbitrary (Arbitrary(..))
+import GHC.TypeLits (KnownNat, natVal)
+import Test.QuickCheck.Arbitrary (Arbitrary(..), vector)
 import Test.QuickCheck.Gen (generate)
 import Text.Shakespeare.Text (st)
 
@@ -114,6 +117,10 @@ instance Arbitrary SelfRef where
   arbitrary = SelfRef "self" <$> arbitrary
 instance Arbitrary Foo where
   arbitrary = Foo "foo" <$> arbitrary <*> arbitrary
+instance (KnownNat n, Arbitrary a) => Arbitrary (Sized.Vector n a) where
+  arbitrary =
+    fromMaybe (error "`vector` should return list of requested length") . Sized.fromList <$>
+    vector (fromIntegral (natVal (Proxy :: Proxy n)))
 
 instance SelfRef `PointsAt` Entity SelfRef
 instance SelfRef `PointsAt` Maybe (Entity SelfRef)
@@ -153,6 +160,21 @@ main = do
         _ <-
           generate arbitrary
             :: IO (Line '[Entity Student, Entity Teacher, Entity School, Entity District, Entity State])
+        pure ()
+      it "works with paired vectors" $ db $ do
+        void . insert $ School "Bump id" Nothing
+        arbGraph <- unRawGraph <$> liftIO (generate arbitrary)
+        entGraph <-
+          insertGraph arbGraph
+            :: M
+              (HGraph
+               '[ '("T", '["S"], Sized.Vector 3 (Entity Teacher))
+                , '("S", '["D"], Sized.Vector 3 (Entity School))
+                , '("D", '["St"], Sized.Vector 3 (Entity District))
+                , '("St", '[], Entity State)
+                ]
+              )
+        liftIO $ print entGraph
         pure ()
       it "defaults only missing keys to nothing" $ db $ do
         arbGraph <- unRawGraph <$> liftIO (generate arbitrary)
