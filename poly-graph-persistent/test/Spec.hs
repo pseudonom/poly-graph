@@ -101,6 +101,8 @@ share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigra
     name Text
     studentId StudentId Maybe
     teacherId TeacherId Maybe
+    bar Bool
+    BarUnique bar -- This is a nonsensical constraint just to test uniqueness violations
     deriving Show Eq Generic
 |]
 instance Arbitrary State where
@@ -116,7 +118,7 @@ instance Arbitrary Student where
 instance Arbitrary SelfRef where
   arbitrary = SelfRef "self" <$> arbitrary
 instance Arbitrary Foo where
-  arbitrary = Foo "foo" <$> arbitrary <*> arbitrary
+  arbitrary = Foo "foo" <$> arbitrary <*> arbitrary <*> arbitrary
 instance (KnownNat n, Arbitrary a) => Arbitrary (Sized.Vector n a) where
   arbitrary =
     fromMaybe (error "`vector` should return list of requested length") . Sized.fromList <$>
@@ -208,6 +210,24 @@ main = do
           insertGraph . unRawGraph =<< liftIO (generate arbitrary)
           :: M (HGraph '[ '(1, '[], Entity SelfRef), '(2, '[], Maybe (Entity SelfRef)) ])
         liftIO $ (entGraph ^? _head . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
+      it "works with unique constraints" $ db $ do
+        graph <-
+          unRawGraph <$> liftIO (generate arbitrary)
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Foo)
+                    , '("Foo2", '[], Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Entity Foo)
+                    , '("Foo2", '[], Entity Foo)
+                    ]
+                 )
+        pure ()
       it "works with Maybe key to plain" $ db $ do
         graph <-
           unRawGraph <$> liftIO (generate arbitrary)
