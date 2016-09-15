@@ -25,7 +25,6 @@ module Data.Graph.HGraph
   , X.retag
   ) where
 
-import Data.Functor.Identity
 import Data.Type.Bool
 import Data.Type.Equality
 import qualified Data.Vector.Sized as Sized
@@ -225,6 +224,32 @@ instance {-# OVERLAPPING #-} Pluck name ('(name, is, b) ': c) b where
   pluck Proxy = _head
 instance (Pluck name d b) => Pluck name ('(otherName, is, c) ': d) b where
   pluck p = _tail . pluck p
+
+
+allOfType :: (GetAllOfType b a, SetAllOfType b a) => Traversal' (HGraph a) b
+allOfType =
+  traversal getAllOfType setAllOfType
+    where
+      traversal :: (s -> [a]) -> (s -> [b] -> t) -> Traversal s t a b
+      traversal get set afb s = set s <$> traverse afb (get s)
+
+class GetAllOfType ty a where
+  getAllOfType :: HGraph a -> [ty]
+instance GetAllOfType ty '[] where
+  getAllOfType Nil = []
+instance {-# OVERLAPPING #-} (GetAllOfType ty c) => GetAllOfType ty ('(name, is, ty) ': c) where
+  getAllOfType (a :< rest) = a : getAllOfType rest
+instance (GetAllOfType ty c) => GetAllOfType ty ('(name, is, ty') ': c) where
+  getAllOfType (_ :< rest) = getAllOfType rest
+
+class SetAllOfType ty a where
+  setAllOfType :: HGraph a -> [ty] -> HGraph a
+instance SetAllOfType ty '[] where
+  setAllOfType Nil [] = Nil
+instance {-# OVERLAPPING #-} (SetAllOfType ty c) => SetAllOfType ty ('(name, is, ty) ': c) where
+  setAllOfType (_ :< rest) (a' : rest') = Node a' `Cons` setAllOfType rest rest'
+instance (SetAllOfType ty c) => SetAllOfType ty ('(name, is, ty') ': c) where
+  setAllOfType (a `Cons` rest) rest' = a `Cons` setAllOfType rest rest'
 
 
 type Line as = HGraph (Line' as)
