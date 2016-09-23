@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -15,15 +16,18 @@
 
 module Data.Graph.HGraph.Persistent where
 
+import Control.Lens (partsOf, (^..), (%%~))
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Foldable (traverse_)
+import qualified Data.List as List
 import Data.Proxy
 import Database.Persist
 import Generics.Eot (Eot, HasEot)
 import GHC.TypeLits hiding (TypeError)
-import Test.QuickCheck.Gen (generate)
+import Test.QuickCheck (vector)
 import Test.QuickCheck.Arbitrary (Arbitrary(..))
+import Test.QuickCheck.Gen (generate, Gen)
 
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances
@@ -174,3 +178,15 @@ insertGraphFromFragments
 insertGraphFromFragments Proxy f = do
   graph <- liftIO (f . unRawGraph <$> generate arbitrary)
   (graph,) <$> insertGraph graph
+
+-- Handy helper function for ensuring that a graph is unique in some attribute (e.g. email address)
+unique :: (Eq c, SetAllOfType a b, GetAllOfType a b, Arbitrary c) => Lens' b c -> HGraph a -> Gen (HGraph a)
+unique field graph = do
+  if anySame (graph ^.. allOfType . field)
+  then do
+    -- Weirdly, switching this to `(=<<)` stops it from type checking
+    graph' <- graph & partsOf (allOfType . field) %%~ vector . length
+    unique field graph'
+  else pure graph
+  where
+    anySame xs = length (List.nub xs) /= length xs

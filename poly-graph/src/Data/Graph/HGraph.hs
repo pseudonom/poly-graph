@@ -226,29 +226,29 @@ instance (Pluck name d b) => Pluck name ('(otherName, is, c) ': d) b where
   pluck p = _tail . pluck p
 
 
-allOfType :: (GetAllOfType b a, SetAllOfType b a) => Traversal' (HGraph a) b
+allOfType :: (GetAllOfType a b, SetAllOfType a b) => Traversal' (HGraph a) b
 allOfType =
   traversal getAllOfType setAllOfType
     where
       traversal :: (s -> [a]) -> (s -> [b] -> t) -> Traversal s t a b
       traversal get set afb s = set s <$> traverse afb (get s)
 
-class GetAllOfType ty a where
+class GetAllOfType a ty where
   getAllOfType :: HGraph a -> [ty]
-instance GetAllOfType ty '[] where
+instance GetAllOfType '[] ty where
   getAllOfType Nil = []
-instance {-# OVERLAPPING #-} (GetAllOfType ty c) => GetAllOfType ty ('(name, is, ty) ': c) where
+instance {-# OVERLAPPING #-} (GetAllOfType c ty) => GetAllOfType ('(name, is, ty) ': c) ty where
   getAllOfType (a :< rest) = a : getAllOfType rest
-instance (GetAllOfType ty c) => GetAllOfType ty ('(name, is, ty') ': c) where
+instance (GetAllOfType c ty) => GetAllOfType ('(name, is, ty') ': c) ty where
   getAllOfType (_ :< rest) = getAllOfType rest
 
-class SetAllOfType ty a where
+class SetAllOfType a ty where
   setAllOfType :: HGraph a -> [ty] -> HGraph a
-instance SetAllOfType ty '[] where
+instance SetAllOfType '[] ty where
   setAllOfType Nil [] = Nil
-instance {-# OVERLAPPING #-} (SetAllOfType ty c) => SetAllOfType ty ('(name, is, ty) ': c) where
+instance {-# OVERLAPPING #-} (SetAllOfType c ty) => SetAllOfType ('(name, is, ty) ': c) ty where
   setAllOfType (_ :< rest) (a' : rest') = Node a' `Cons` setAllOfType rest rest'
-instance (SetAllOfType ty c) => SetAllOfType ty ('(name, is, ty') ': c) where
+instance (SetAllOfType c ty) => SetAllOfType ('(name, is, ty') ': c) ty where
   setAllOfType (a `Cons` rest) rest' = a `Cons` setAllOfType rest rest'
 
 

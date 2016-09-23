@@ -8,6 +8,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -27,6 +28,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (MonadBaseControl)
 import Data.Maybe (fromMaybe)
+import Data.Monoid (Endo)
 import Data.Proxy (Proxy(..))
 import Data.Text (Text, pack)
 import qualified Data.Vector.Sized as Sized
@@ -36,7 +38,7 @@ import Database.Persist.TH
 import GHC.Generics (Generic)
 import GHC.TypeLits (KnownNat, natVal)
 import Test.QuickCheck.Arbitrary (Arbitrary(..), vector)
-import Test.QuickCheck.Gen (generate)
+import Test.QuickCheck.Gen (generate, Gen)
 import Text.Shakespeare.Text (st)
 
 import Data.Graph.HGraph
@@ -212,7 +214,7 @@ main = do
         liftIO $ (entGraph ^? _head . _entityVal . selfRefSelfRefId . _Just) `shouldBe` Nothing
       it "works with unique constraints" $ db $ do
         graph <-
-          unRawGraph <$> liftIO (generate arbitrary)
+          liftIO (generate (unique fooBar . unRawGraph =<< arbitrary))
             :: M (
                  HGraph
                    '[ '("Foo1", '[], Foo)
