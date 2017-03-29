@@ -10,6 +10,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -107,6 +108,15 @@ share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigra
     BarUnique bar -- This is a nonsensical constraint just to test uniqueness violations
     deriving Show Eq Generic
 |]
+
+deriving instance Eq (Unique SelfRef)
+deriving instance Eq (Unique State)
+deriving instance Eq (Unique District)
+deriving instance Eq (Unique School)
+deriving instance Eq (Unique Teacher)
+deriving instance Eq (Unique Student)
+deriving instance Eq (Unique Foo)
+
 instance Arbitrary State where
   arbitrary = pure $ State "grault"
 instance Arbitrary District where
@@ -227,6 +237,40 @@ main = do
                  HGraph
                    '[ '("Foo1", '[], Entity Foo)
                     , '("Foo2", '[], Entity Foo)
+                    ]
+                 )
+        pure ()
+      it "works with unique constraints without using unique" $ db $ do
+        graph <-
+          liftIO (generate (unRawGraph <$> arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Foo)
+                    , '("Foo2", '[], Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Entity Foo)
+                    , '("Foo2", '[], Entity Foo)
+                    ]
+                 )
+        pure ()
+      it "ensures internal uniqueness in a single node" $ db $ do
+        graph <-
+          liftIO (generate (unRawGraph <$> arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Foo", '[], Sized.Vector 2 Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Foo", '[], Sized.Vector 2 (Entity Foo))
                     ]
                  )
         pure ()

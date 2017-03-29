@@ -13,14 +13,17 @@
 {-# LANGUAGE UndecidableInstances #-}
 -- Pattern synonyms and exhaustivity checking don't work well together
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Graph.HGraph.Persistent where
 
 import Control.Lens (partsOf, (^..), (%%~))
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Foldable (traverse_)
+import Data.Foldable (traverse_, toList)
 import qualified Data.List as List
+import Data.Maybe (mapMaybe)
+import Data.List.NonEmpty (nonEmpty)
 import Data.Proxy
 import Database.Persist
 import Generics.Eot (Eot, HasEot)
@@ -129,17 +132,29 @@ class
     (MonadIO m, UnwrapAll b ~ a) =>
     Proxy ps -> HGraph a -> ReaderT backend m (HGraph b)
 
--- -- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
+-- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
 instance
   ( InsertElement a b backend baseBackend, HasEot a, GNullify a ps (Eot a)
   , PointsAtR i is a '[]
   , BaseBackend backend ~ baseBackend
   , PersistStoreWrite backend
+  , IsInternallyConsistent a b
+  , Arbitrary a
   ) =>
   InsertGraph ps '[ '(i, is, a)] '[ '(i, is, b)] backend baseBackend where
-  insertGraph' Proxy (a `Cons` Nil) = do
-    e <- insertElement . unNode  $ a `pointsAtR` Nil
-    pure $ Node e `Cons` Nil
+  insertGraph' Proxy (rawNode `Cons` Nil) =
+    loop rawNode
+   where
+    loop :: MonadIO m => Node i is a -> ReaderT backend m (HGraph '[ '(i, is, b) ])
+    loop node = do
+      let Node updated = node `pointsAtR` Nil
+      if isInternallyConsistent updated
+        then do
+          e <- insertElement updated
+          pure $ Node e `Cons` Nil
+        else do
+          fresh <- liftIO $ generate arbitrary
+          loop $ Node fresh
 
 -- | HGraph recursive case
 instance
@@ -147,14 +162,73 @@ instance
   , PointsAtR i is a (e ': f)
   , InsertGraph ps (b ': c) (e ': f) backend baseBackend
   , InsertElement a d backend baseBackend
+  , CheckUniqueness a d (e ': f)
+  , Arbitrary a
   ) =>
   InsertGraph ps ('(i, is, a) ': b ': c) ('(i, is, d) ': e ': f) backend baseBackend where
-  insertGraph' Proxy (a `Cons` b) = do
-    b' <- insertGraph' (Proxy :: Proxy ps) b
-    let Node a' = a `pointsAtR` b'
-    a'' <- insertElement a'
-    pure $ Node a'' `Cons` b'
+  insertGraph' Proxy (rawNode `Cons` rawGraph) = do
+    graph <- insertGraph' (Proxy :: Proxy ps) rawGraph
+    loop rawNode graph
+   where
+    loop :: MonadIO m => Node i is a -> HGraph (e ': f) -> ReaderT backend m (HGraph ('(i, is, d) ': e ': f))
+    loop node graph = do
+      let Node updated = node `pointsAtR` graph
+      if updated `isUniqueIn` graph
+        then do
+          inserted <- insertElement updated
+          pure $ Node inserted `Cons` graph
+        else do
+          fresh <- liftIO $ generate arbitrary
+          loop (Node fresh) graph
 
+-- | Check that a new node would be unique in the already constructed graph
+class CheckUniqueness a b bs | a -> b, b -> a where
+  isUniqueIn :: a -> HGraph bs -> Bool
+
+-- | Check uniqueness for a by its [Unique a]
+instance
+  ( PersistEntity a
+  , GetAllOfType bs (Entity a)
+  , Eq (Unique a)
+  ) => CheckUniqueness a (Entity a) bs where
+  a `isUniqueIn` graph =
+    null theseKeys || theseKeys `notElem` otherKeys
+   where
+    theseKeys = persistUniqueKeys a
+    otherKeys = filter (not . null) . map (persistUniqueKeys . entityVal) . getAllOfType $ graph
+
+-- | Check uniqueness by looking inside Functor-shaped values and ensuring
+-- that the values in the Functor itself are unique together
+instance
+  ( PersistEntity a
+  , CheckUniqueness a (Entity a) bs
+  , Functor f
+  , Foldable f
+  , IsInternallyConsistent (f a) (f (Entity a))
+  ) => CheckUniqueness (f a) (f (Entity a)) bs where
+  fa `isUniqueIn` graph = isInternallyConsistent fa && all (`isUniqueIn` graph) fa
+
+-- | Check that a context-free value is internally consistent
+class IsInternallyConsistent a b | a -> b, b -> a where
+  isInternallyConsistent :: a -> Bool
+
+-- | Trivally true for a given Entity (though we could add other constraints here)
+instance IsInternallyConsistent a (Entity a) where
+  isInternallyConsistent = const True
+
+-- | Collections of entities should not have duplicates (again using [Unique a])
+instance
+  ( Foldable f
+  , PersistEntity a
+  , Eq (Unique a)
+  , Show (Unique a)
+  , Show a
+  ) => IsInternallyConsistent (f a) (f (Entity a)) where
+  isInternallyConsistent fa =
+    length (List.nub keys) == length keys
+   where
+    items = toList fa
+    keys = mapMaybe (nonEmpty . persistUniqueKeys) items
 
 class
   InsertElement (a :: *) (b :: *) (backend :: *) (baseBackend :: *) | a -> b, b -> a, a -> baseBackend, b -> baseBackend where

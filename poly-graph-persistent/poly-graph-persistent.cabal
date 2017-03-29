@@ -25,6 +25,7 @@ library
                      , generics-eot
                      , QuickCheck
                      , lens
+                     , semigroups
   default-language:    Haskell2010
 
 test-suite test
