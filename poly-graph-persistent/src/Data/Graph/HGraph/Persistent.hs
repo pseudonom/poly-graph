@@ -17,14 +17,18 @@
 
 module Data.Graph.HGraph.Persistent where
 
+import Control.Arrow ((&&&))
 import Control.Lens (partsOf, (^..), (%%~))
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Foldable (traverse_, toList)
 import qualified Data.List as List
-import Data.Maybe (mapMaybe)
 import Data.List.NonEmpty (nonEmpty)
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 import Data.Proxy
+import Data.Text (unpack)
 import Database.Persist
 import Generics.Eot (Eot, HasEot)
 import GHC.TypeLits hiding (TypeError)
@@ -138,23 +142,12 @@ instance
   , PointsAtR i is a '[]
   , BaseBackend backend ~ baseBackend
   , PersistStoreWrite backend
-  , IsInternallyConsistent a b
-  , Arbitrary a
   ) =>
   InsertGraph ps '[ '(i, is, a)] '[ '(i, is, b)] backend baseBackend where
-  insertGraph' Proxy (rawNode `Cons` Nil) =
-    loop rawNode
-   where
-    loop :: MonadIO m => Node i is a -> ReaderT backend m (HGraph '[ '(i, is, b) ])
-    loop node = do
-      let Node updated = node `pointsAtR` Nil
-      if isInternallyConsistent updated
-        then do
-          e <- insertElement updated
-          pure $ Node e `Cons` Nil
-        else do
-          fresh <- liftIO $ generate arbitrary
-          loop $ Node fresh
+  insertGraph' Proxy (rawNode `Cons` Nil) = do
+    let Node updated = rawNode `pointsAtR` Nil
+    inserted <- insertElement updated
+    pure $ Node inserted `Cons` Nil
 
 -- | HGraph recursive case
 instance
@@ -162,73 +155,13 @@ instance
   , PointsAtR i is a (e ': f)
   , InsertGraph ps (b ': c) (e ': f) backend baseBackend
   , InsertElement a d backend baseBackend
-  , CheckUniqueness a d (e ': f)
-  , Arbitrary a
   ) =>
   InsertGraph ps ('(i, is, a) ': b ': c) ('(i, is, d) ': e ': f) backend baseBackend where
   insertGraph' Proxy (rawNode `Cons` rawGraph) = do
     graph <- insertGraph' (Proxy :: Proxy ps) rawGraph
-    loop rawNode graph
-   where
-    loop :: MonadIO m => Node i is a -> HGraph (e ': f) -> ReaderT backend m (HGraph ('(i, is, d) ': e ': f))
-    loop node graph = do
-      let Node updated = node `pointsAtR` graph
-      if updated `isUniqueIn` graph
-        then do
-          inserted <- insertElement updated
-          pure $ Node inserted `Cons` graph
-        else do
-          fresh <- liftIO $ generate arbitrary
-          loop (Node fresh) graph
-
--- | Check that a new node would be unique in the already constructed graph
-class CheckUniqueness a b bs | a -> b, b -> a where
-  isUniqueIn :: a -> HGraph bs -> Bool
-
--- | Check uniqueness for a by its [Unique a]
-instance
-  ( PersistEntity a
-  , GetAllOfType bs (Entity a)
-  , Eq (Unique a)
-  ) => CheckUniqueness a (Entity a) bs where
-  a `isUniqueIn` graph =
-    null theseKeys || theseKeys `notElem` otherKeys
-   where
-    theseKeys = persistUniqueKeys a
-    otherKeys = filter (not . null) . map (persistUniqueKeys . entityVal) . getAllOfType $ graph
-
--- | Check uniqueness by looking inside Functor-shaped values and ensuring
--- that the values in the Functor itself are unique together
-instance
-  ( PersistEntity a
-  , CheckUniqueness a (Entity a) bs
-  , Functor f
-  , Foldable f
-  , IsInternallyConsistent (f a) (f (Entity a))
-  ) => CheckUniqueness (f a) (f (Entity a)) bs where
-  fa `isUniqueIn` graph = isInternallyConsistent fa && all (`isUniqueIn` graph) fa
-
--- | Check that a context-free value is internally consistent
-class IsInternallyConsistent a b | a -> b, b -> a where
-  isInternallyConsistent :: a -> Bool
-
--- | Trivally true for a given Entity (though we could add other constraints here)
-instance IsInternallyConsistent a (Entity a) where
-  isInternallyConsistent = const True
-
--- | Collections of entities should not have duplicates (again using [Unique a])
-instance
-  ( Foldable f
-  , PersistEntity a
-  , Eq (Unique a)
-  , Show (Unique a)
-  , Show a
-  ) => IsInternallyConsistent (f a) (f (Entity a)) where
-  isInternallyConsistent fa =
-    length (List.nub keys) == length keys
-   where
-    items = toList fa
-    keys = mapMaybe (nonEmpty . persistUniqueKeys) items
+    let Node updated = rawNode `pointsAtR` graph
+    inserted <- insertElement updated
+    pure $ Node inserted `Cons` graph
 
 class
   InsertElement (a :: *) (b :: *) (backend :: *) (baseBackend :: *) | a -> b, b -> a, a -> baseBackend, b -> baseBackend where
@@ -264,3 +197,119 @@ unique field graph = do
   else pure graph
   where
     anySame xs = length (List.nub xs) /= length xs
+
+type family Wrap (a :: *) :: * where
+  Wrap (f a) = f (Entity a)
+  Wrap a = Entity a
+
+type family WrapAll (as :: [(k, [k], *)]) :: [(k, [k], *)] where
+  WrapAll ('(i, is, a) ': as) = '(i, is, Wrap a) ': WrapAll as
+  WrapAll '[] = '[]
+
+ensureGraphUniqueness
+  :: (EnsureGraphUniqueness '[] a (WrapAll a))
+  => HGraph a
+  -> Gen (HGraph a)
+ensureGraphUniqueness = ensureGraphUniqueness' (Proxy :: Proxy ('[] :: [*]))
+
+class
+  EnsureGraphUniqueness (ps :: [*]) (a :: [(k, [k], *)]) (b :: [(k, [k], *)]) | a -> b, b -> a where
+  ensureGraphUniqueness' :: (WrapAll a ~ b) => Proxy ps -> HGraph a -> Gen (HGraph a)
+
+instance EnsureGraphUniqueness ps '[] '[] where
+  ensureGraphUniqueness' Proxy Nil = pure Nil
+
+instance
+  ( (i `Member` as) ~ 'UniqueName
+  , EnsureGraphUniqueness ps as bs
+  , EnsureUniqueness a b as
+  ) =>
+  EnsureGraphUniqueness ps ('(i, is, a) ': as) ('(i, is, b) ': bs) where
+  ensureGraphUniqueness' Proxy (Node item `Cons` graph) = do
+    uniquedGraph <- ensureGraphUniqueness' (Proxy :: Proxy ps) graph
+    uniqueItem <- ensureUniqueness item uniquedGraph
+    pure $ Node uniqueItem `Cons` uniquedGraph
+
+-- | Update a to be unique in HGraph as
+class EnsureUniqueness a b as | a -> b, b -> a where
+  ensureUniqueness :: (Wrap a ~ b) => a -> HGraph as -> Gen a
+
+-- | Check uniqueness for a by its Uniques modulo FKs
+instance
+  ( PersistEntity a
+  , GetAllOfType as a
+  , Arbitrary a
+  , Eq (Unique a)
+  ) => EnsureUniqueness a (Entity a) as where
+  ensureUniqueness a graph = do
+    let others = getAllOfType graph
+    if any (duplicateUniqueFields a) others
+      then do
+        new <- arbitrary
+        ensureUniqueness new graph
+      else pure a
+
+-- | Check uniqueness by looking inside Functor-shaped values and ensuring
+-- that the values in the Functor itself are unique together
+instance
+  ( Wrap a ~ Entity a
+  , Traversable f
+  , EnsureUniqueness a (Entity a) as
+  , IsInternallyConsistent (f a) (f (Entity a))
+  , Arbitrary a
+  ) => EnsureUniqueness (f a) (f (Entity a)) as where
+  ensureUniqueness fa graph = do
+    fa' <- traverse (`ensureUniqueness` graph) fa
+    if isInternallyConsistent fa'
+      then pure fa'
+      else do
+        fa'' <- traverse (const arbitrary) fa' -- This could be less drastic
+        ensureUniqueness fa'' graph
+
+-- | Check that a context-free value is internally consistent
+class IsInternallyConsistent a b | a -> b, b -> a where
+  isInternallyConsistent :: a -> Bool
+
+-- | Collections of entities should not have duplicates
+instance
+  ( Foldable f
+  , PersistEntity a
+  , Eq (Unique a)
+  ) => IsInternallyConsistent (f a) (f (Entity a)) where
+  isInternallyConsistent fa =
+    length (List.nubBy duplicateUniqueFields items) == length items
+   where
+    items = toList fa
+
+-- | Check that two records have the same unique fields ignoring
+-- FKs since they'll probably be manipulated later by the graph machinery
+duplicateUniqueFields :: (Eq (Unique r), PersistEntity r) => r -> r -> Bool
+duplicateUniqueFields x y =
+  xUniques == yUniques
+ where
+  xUniques = persistUniqueKeys x
+  yUniques = persistUniqueKeys (y `copyUniqueFksFrom` xUniques)
+
+-- | Copy FKs used in a Unique constraint from the list of Uniques
+-- into the record. This keeps us from considering arbitrary FKs
+-- that will later be overwritten as contributing to uniqueness.
+copyUniqueFksFrom :: PersistEntity r => r -> [Unique r] -> r
+r `copyUniqueFksFrom` xs =
+  right $ fromPersistValues $ do
+    ((key, refType), original) <- zip keys values
+    case refType of
+      ForeignRef _ _ -> pure (fromMaybe original $ Map.lookup key updates)
+      _ -> pure original
+ where
+  keys = (fieldHaskell &&& fieldReference) <$> entityFields (entityDef $ Just r)
+  values = toPersistValue <$> toPersistFields r
+  updates = generateUpdates xs
+  right (Left t) = error $ "copyUniqueFksFrom: " ++ unpack t
+  right (Right s) = s
+
+-- | Generate a Map of updates from Uniques
+generateUpdates :: PersistEntity r => [Unique r] -> Map HaskellName PersistValue
+generateUpdates =
+  Map.fromList . concatMap toPairs
+ where
+  toPairs x = zip (fst <$> persistUniqueToFieldNames x) (persistUniqueToValues x)
