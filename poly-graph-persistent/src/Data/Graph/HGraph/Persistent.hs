@@ -175,10 +175,37 @@ instance
     pure $ Entity <$> fid <*> fa
 
 insertGraphFromFragments
-  :: (MonadIO m, Arbitrary (RawGraph z), z ~ UnwrapAll y, InsertGraph '[] z y backend baseBackend, PersistStoreWrite backend, BaseBackend backend ~ baseBackend)
-  => Proxy y -> (HGraph z -> HGraph z) -> ReaderT backend m (HGraph z, HGraph y)
+  ::
+    ( MonadIO m
+    , Arbitrary (RawGraph z)
+    , z ~ UnwrapAll y
+    , InsertGraph '[] z y backend baseBackend
+    , PersistStoreWrite backend
+    , BaseBackend backend ~ baseBackend
+    )
+  => Proxy y
+  -> (HGraph z -> HGraph z)
+  -> ReaderT backend m (HGraph z, HGraph y)
 insertGraphFromFragments Proxy f = do
   graph <- liftIO (f . unRawGraph <$> generate arbitrary)
+  (graph,) <$> insertGraph graph
+
+insertUniqueGraphFromFragments
+  ::
+    ( MonadIO m
+    , Arbitrary (RawGraph z)
+    , z ~ UnwrapAll y
+    , WrapAll z ~ y
+    , EnsureGraphUniqueness '[] z y
+    , InsertGraph '[] z y backend baseBackend
+    , PersistStoreWrite backend
+    , BaseBackend backend ~ baseBackend
+    )
+  => Proxy y
+  -> (HGraph z -> HGraph z)
+  -> ReaderT backend m (HGraph z, HGraph y)
+insertUniqueGraphFromFragments Proxy f = do
+  graph <- liftIO (f <$> generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
   (graph,) <$> insertGraph graph
 
 -- Handy helper function for ensuring that a graph is unique in some attribute (e.g. email address)
