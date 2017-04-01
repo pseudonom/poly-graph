@@ -11,7 +11,6 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -105,13 +104,6 @@ share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigra
     schoolId  SchoolId
     deriving Show Eq Generic
 |]
-
-deriving instance Eq (Unique District)
-deriving instance Eq (Unique School)
-deriving instance Eq (Unique Teacher)
-deriving instance Eq (Unique Student)
-deriving instance Eq (Unique MultiPointer)
-
 instance Arbitrary District where
   arbitrary = District <$> arbitrary <*> arbitrary
 instance Arbitrary School where
