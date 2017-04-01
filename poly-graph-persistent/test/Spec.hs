@@ -279,6 +279,24 @@ main = do
                     ]
                  )
         pure ()
+      it "works with unique constraints and unique if the latter is used carefully" $ db $ do
+        graph <-
+          liftIO (generate (unique fooName =<< ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Foo)
+                    , '("Foo2", '[], Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Entity Foo)
+                    , '("Foo2", '[], Entity Foo)
+                    ]
+                 )
+        pure ()
       it "ensures internal uniqueness in a single node" $ db $ do
         graph <-
           liftIO (generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
