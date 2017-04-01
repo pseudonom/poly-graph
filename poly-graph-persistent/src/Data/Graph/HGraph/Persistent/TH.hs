@@ -28,20 +28,23 @@ mkUniquenessChecks :: MkPersistSettings -> [EntityDef] -> Q [Dec]
 mkUniquenessChecks settings = fmap concat . traverse (mkUniquenessCheck settings)
 
 mkUniquenessCheck :: MkPersistSettings -> EntityDef -> Q [Dec]
-mkUniquenessCheck settings EntityDef{..} =
+mkUniquenessCheck settings def = do
+  lhs <- newName "lhs"
+  rhs <- newName "rhs"
+  mkUniquenessCheckWithOperands settings def (lhs, rhs)
+
+mkUniquenessCheckWithOperands :: MkPersistSettings -> EntityDef -> (Name, Name) -> Q [Dec]
+mkUniquenessCheckWithOperands settings EntityDef{..} operands@(lhs, rhs) =
   [d|
     instance UniquenessCheck $typeName where
-      couldCauseUniquenessViolation $lhs $rhs = $expr
+      couldCauseUniquenessViolation $(varP lhs) $(varP rhs) = $expr
   |]
  where
-  lhs = pure $ VarP $ mkName "lhs"
-  rhs = pure $ VarP $ mkName "rhs"
-
   unHaskelled = unHaskellName entityHaskell
   typeName = conT $ mkName $ unpack unHaskelled
 
   nameToRef = Map.fromList ((fieldHaskell &&& fieldReference) <$> entityFields)
-  expr = pure $ mkOrExpr mkSelector nameToRef entityUniques
+  expr = pure $ mkOrExpr mkSelector nameToRef operands entityUniques
 
   mkSelector = mkName . unpack . maybeUnderscore . maybePrefixed
   maybeUnderscore fieldName
@@ -63,33 +66,28 @@ upperFirst t =
     Just (c, cs) -> cons (toUpper c) cs
     Nothing -> t
 
-mkOrExpr :: (HaskellName -> Name) -> Map HaskellName ReferenceDef -> [UniqueDef] -> Exp
-mkOrExpr mkSelector nameToRef uniqueDefs =
-  maybe
-    false
-    (foldl1 $ binApp orOp)
-    (nonEmpty andExprs)
+mkOrExpr :: (HaskellName -> Name) -> Map HaskellName ReferenceDef -> (Name, Name) -> [UniqueDef] -> Exp
+mkOrExpr mkSelector nameToRef operands uniqueDefs =
+  maybe false (foldl1 $ binApp orOp) (nonEmpty andExprs)
  where
   false = ConE $ mkName "False"
   orOp = VarE $ mkName "||"
-  andExprs = mapMaybe (mkAndExpr mkSelector nameToRef) uniqueDefs
+  andExprs = mapMaybe (mkAndExpr mkSelector nameToRef operands) uniqueDefs
 
-mkAndExpr :: (HaskellName -> Name) -> Map HaskellName ReferenceDef -> UniqueDef -> Maybe Exp
-mkAndExpr mkSelector nameToRef UniqueDef{..} =
+mkAndExpr :: (HaskellName -> Name) -> Map HaskellName ReferenceDef -> (Name, Name) -> UniqueDef -> Maybe Exp
+mkAndExpr mkSelector nameToRef operands UniqueDef{..} =
   foldl1 (binApp andOp) <$> nonEmpty comparisons
  where
   andOp = VarE $ mkName "&&"
   fields = map fst uniqueFields
   nonForeignFields = filter (not . isForeignRef . (nameToRef Map.!)) fields
-  comparisons = map (mkComparison . mkSelector) nonForeignFields
+  comparisons = map (mkComparison operands . mkSelector) nonForeignFields
 
-mkComparison :: Name -> Exp
-mkComparison selector =
-  binApp eqOp (VarE selector `AppE` lhs) (VarE selector `AppE` rhs)
+mkComparison :: (Name, Name) -> Name -> Exp
+mkComparison (lhs, rhs) selector =
+  binApp eqOp (VarE selector `AppE` VarE lhs) (VarE selector `AppE` VarE rhs)
  where
   eqOp = VarE $ mkName "=="
-  lhs = VarE $ mkName "lhs"
-  rhs = VarE $ mkName "rhs"
 
 binApp :: Exp -> Exp -> Exp -> Exp
 binApp f x y = UInfixE x f y
