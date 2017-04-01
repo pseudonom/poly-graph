@@ -23,7 +23,7 @@ import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Foldable (traverse_, toList)
 import qualified Data.List as List
-import Data.List.NonEmpty (nonEmpty)
+import Data.List.NonEmpty (NonEmpty, nonEmpty)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
@@ -285,10 +285,22 @@ instance
 -- FKs since they'll probably be manipulated later by the graph machinery
 duplicateUniqueFields :: (Eq (Unique r), PersistEntity r) => r -> r -> Bool
 duplicateUniqueFields x y =
-  xUniques == yUniques
+  fromMaybe False $ do
+    xs <- comparableUniques Nothing xUniques
+    ys <- comparableUniques Nothing yUniques
+    return $ xs == ys
  where
   xUniques = persistUniqueKeys x
   yUniques = persistUniqueKeys (y `copyUniqueFksFrom` xUniques)
+
+comparableUniques :: PersistEntity r => Maybe r -> [Unique r] -> Maybe (NonEmpty (Unique r))
+comparableUniques mr =
+  nonEmpty . filter (not . onlyHasFks)
+ where
+  nameToRef = Map.fromList ((fieldHaskell &&& fieldReference) <$> entityFields (entityDef mr))
+  onlyHasFks = all (isForeignRef . (nameToRef Map.!) . fst) . persistUniqueToFieldNames
+  isForeignRef ForeignRef{} = True
+  isForeignRef _ = False
 
 -- | Copy FKs used in a Unique constraint from the list of Uniques
 -- into the record. This keeps us from considering arbitrary FKs
@@ -298,7 +310,7 @@ r `copyUniqueFksFrom` xs =
   right $ fromPersistValues $ do
     ((key, refType), original) <- zip keys values
     case refType of
-      ForeignRef _ _ -> pure (fromMaybe original $ Map.lookup key updates)
+      ForeignRef{} -> pure (fromMaybe original $ Map.lookup key updates)
       _ -> pure original
  where
   keys = (fieldHaskell &&& fieldReference) <$> entityFields (entityDef $ Just r)
