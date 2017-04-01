@@ -17,10 +17,12 @@ library
   hs-source-dirs:      src
   exposed-modules:     Data.Graph.HGraph.Persistent
                      , Data.Graph.HGraph.Persistent.Instances
+                     , Data.Graph.HGraph.Persistent.TH
   build-depends:       base >= 4.7 && < 5
                      , poly-graph
                      , transformers
                      , persistent
+                     , persistent-template
                      , tagged
                      , generics-eot
                      , QuickCheck
@@ -28,6 +30,7 @@ library
                      , semigroups
                      , text
                      , containers
+                     , template-haskell
   default-language:    Haskell2010
 
 test-suite test

@@ -46,6 +46,7 @@ import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances ()
 import Data.Graph.HGraph.Persistent
 import Data.Graph.HGraph.Persistent.Instances ()
+import Data.Graph.HGraph.Persistent.TH
 import Data.Graph.HGraph.TH
 
 connString :: ConnectionString
@@ -75,8 +76,7 @@ instance Arbitrary Text where
   arbitrary = pack . filter (not . isBadChar) <$> arbitrary
     where isBadChar x = x == '\NUL' || x == '\\' -- Make postgres vomit
 
-
-share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistLowerCase|
+share [mkUniquenessChecks sqlSettings { mpsGenerateLenses = True }, mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistLowerCase|
   SelfRef
     name Text
     selfRefId SelfRefId Maybe
@@ -116,19 +116,18 @@ share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigra
     name Text
     bar Bool
     foo FooId
-    UniqueFooBar foo bar -- Finally, a nonsensical constraint that has an FK and plain value
+    UniqueFooBar foo bar -- A nonsensical constraint that has an FK and plain value
+    deriving Show Eq Generic
+  Merp
+    name Text
+    bar Bool
+    baz Bool
+    whomp Bool
+    foo FooId
+    UniqueFooBarBaz foo bar baz -- A nonsensical constraint that has an FK and two plain values
+    UniqueWhomp whomp -- A second constraint
     deriving Show Eq Generic
 |]
-
-deriving instance Eq (Unique SelfRef)
-deriving instance Eq (Unique State)
-deriving instance Eq (Unique District)
-deriving instance Eq (Unique School)
-deriving instance Eq (Unique Teacher)
-deriving instance Eq (Unique Student)
-deriving instance Eq (Unique Foo)
-deriving instance Eq (Unique Baz)
-deriving instance Eq (Unique Quux)
 
 instance Arbitrary State where
   arbitrary = pure $ State "grault"
@@ -148,6 +147,8 @@ instance Arbitrary Baz where
   arbitrary = Baz "baz" <$> arbitrary
 instance Arbitrary Quux where
   arbitrary = Quux "quux" <$> arbitrary <*> arbitrary
+instance Arbitrary Merp where
+  arbitrary = Merp "merp" <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
 instance (KnownNat n, Arbitrary a) => Arbitrary (Sized.Vector n a) where
   arbitrary =
     fromMaybe (error "`vector` should return list of requested length") . Sized.fromList <$>
@@ -165,6 +166,7 @@ instance Foo `PointsAt` Entity Student
 instance Foo `PointsAt` Entity Teacher
 instance Baz `PointsAt` Entity Foo
 instance Quux `PointsAt` Entity Foo
+instance Merp `PointsAt` Entity Foo
 
 _entityKey :: Lens' (Entity a) (Key a)
 _entityKey pure' (Entity i e) = (\i' -> Entity i' e) <$> pure' i
@@ -373,6 +375,26 @@ main = do
                  HGraph
                    '[ '("Quux1", '["Foo"], Entity Quux)
                     , '("Quux2", '["Foo"], Entity Quux)
+                    , '("Foo", '[], Entity Foo)
+                    ]
+                 )
+        pure ()
+      it "ignores the FK component of a unique constraint with multiple plain components" $ db $ do
+        graph <-
+          liftIO (generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Merp1", '["Foo"], Merp)
+                    , '("Merp2", '["Foo"], Merp)
+                    , '("Foo", '[], Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Merp1", '["Foo"], Entity Merp)
+                    , '("Merp2", '["Foo"], Entity Merp)
                     , '("Foo", '[], Entity Foo)
                     ]
                  )

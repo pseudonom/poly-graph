@@ -17,18 +17,12 @@
 
 module Data.Graph.HGraph.Persistent where
 
-import Control.Arrow ((&&&))
 import Control.Lens (partsOf, (^..), (%%~))
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Foldable (traverse_, toList)
 import qualified Data.List as List
-import Data.List.NonEmpty (NonEmpty, nonEmpty)
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe)
 import Data.Proxy
-import Data.Text (unpack)
 import Database.Persist
 import Generics.Eot (Eot, HasEot)
 import GHC.TypeLits hiding (TypeError)
@@ -39,6 +33,7 @@ import Test.QuickCheck.Gen (generate, Gen)
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances
 import Data.Graph.HGraph.Internal
+import Data.Graph.HGraph.Persistent.TH (UniquenessCheck(..))
 
 instance
   Key a `FieldPointsAt` Entity a where
@@ -239,11 +234,11 @@ instance
   ( PersistEntity a
   , GetAllOfType as a
   , Arbitrary a
-  , Eq (Unique a)
+  , UniquenessCheck a
   ) => EnsureUniqueness a (Entity a) as where
   ensureUniqueness a graph = do
     let others = getAllOfType graph
-    if any (duplicateUniqueFields a) others
+    if any (couldCauseUniquenessViolation a) others
       then do
         new <- arbitrary
         ensureUniqueness new graph
@@ -274,54 +269,9 @@ class IsInternallyConsistent a b | a -> b, b -> a where
 instance
   ( Foldable f
   , PersistEntity a
-  , Eq (Unique a)
+  , UniquenessCheck a
   ) => IsInternallyConsistent (f a) (f (Entity a)) where
   isInternallyConsistent fa =
-    length (List.nubBy duplicateUniqueFields items) == length items
+    length (List.nubBy couldCauseUniquenessViolation items) == length items
    where
     items = toList fa
-
--- | Check that two records have the same unique fields ignoring
--- FKs since they'll probably be manipulated later by the graph machinery
-duplicateUniqueFields :: (Eq (Unique r), PersistEntity r) => r -> r -> Bool
-duplicateUniqueFields x y =
-  fromMaybe False $ do
-    xs <- comparableUniques Nothing xUniques
-    ys <- comparableUniques Nothing yUniques
-    return $ xs == ys
- where
-  xUniques = persistUniqueKeys x
-  yUniques = persistUniqueKeys (y `copyUniqueFksFrom` xUniques)
-
-comparableUniques :: PersistEntity r => Maybe r -> [Unique r] -> Maybe (NonEmpty (Unique r))
-comparableUniques mr =
-  nonEmpty . filter (not . onlyHasFks)
- where
-  nameToRef = Map.fromList ((fieldHaskell &&& fieldReference) <$> entityFields (entityDef mr))
-  onlyHasFks = all (isForeignRef . (nameToRef Map.!) . fst) . persistUniqueToFieldNames
-  isForeignRef ForeignRef{} = True
-  isForeignRef _ = False
-
--- | Copy FKs used in a Unique constraint from the list of Uniques
--- into the record. This keeps us from considering arbitrary FKs
--- that will later be overwritten as contributing to uniqueness.
-copyUniqueFksFrom :: PersistEntity r => r -> [Unique r] -> r
-r `copyUniqueFksFrom` xs =
-  right $ fromPersistValues $ do
-    ((key, refType), original) <- zip keys values
-    case refType of
-      ForeignRef{} -> pure (fromMaybe original $ Map.lookup key updates)
-      _ -> pure original
- where
-  keys = (fieldHaskell &&& fieldReference) <$> entityFields (entityDef $ Just r)
-  values = toPersistValue <$> toPersistFields r
-  updates = generateUpdates xs
-  right (Left t) = error $ "copyUniqueFksFrom: " ++ unpack t
-  right (Right s) = s
-
--- | Generate a Map of updates from Uniques
-generateUpdates :: PersistEntity r => [Unique r] -> Map HaskellName PersistValue
-generateUpdates =
-  Map.fromList . concatMap toPairs
- where
-  toPairs x = zip (fst <$> persistUniqueToFieldNames x) (persistUniqueToValues x)
