@@ -263,13 +263,12 @@ instance
   , Arbitrary a
   , UniquenessCheck a
   ) => EnsureUniqueness a (Entity a) as where
-  ensureUniqueness a graph = do
-    let others = getAllOfType graph
-    if any (couldCauseUniquenessViolation a) others
-      then do
-        new <- arbitrary
-        ensureUniqueness new graph
-      else pure a
+  ensureUniqueness a0 graph =
+    loop (getAllOfType graph) a0
+   where
+    loop others a
+      | any (couldCauseUniquenessViolation a) others = arbitrary >>= loop others
+      | otherwise = pure a
 
 -- | Check uniqueness by looking inside Functor-shaped values and ensuring
 -- that the values in the Functor itself are unique together
