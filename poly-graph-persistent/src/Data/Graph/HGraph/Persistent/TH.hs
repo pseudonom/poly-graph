@@ -28,8 +28,8 @@ mkUniquenessChecks settings = fmap concat . traverse (mkUniquenessCheck settings
 
 mkUniquenessCheck :: MkPersistSettings -> EntityDef -> Q [Dec]
 mkUniquenessCheck settings def = do
-  lhs <- newName "lhs"
-  rhs <- newName "rhs"
+  lhs <- newName "_lhs"
+  rhs <- newName "_rhs"
   mkUniquenessCheckWithOperands settings def (lhs, rhs)
 
 mkUniquenessCheckWithOperands :: MkPersistSettings -> EntityDef -> (Name, Name) -> Q [Dec]
