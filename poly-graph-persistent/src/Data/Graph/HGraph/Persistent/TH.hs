@@ -17,6 +17,7 @@ import Data.Maybe (mapMaybe)
 import Data.Monoid ((<>))
 import Data.Text (Text, unpack, cons, uncons)
 import Database.Persist
+import Database.Persist.Quasi (nullable)
 import Database.Persist.TH
 import Language.Haskell.TH
 
@@ -41,9 +42,9 @@ mkUniquenessCheckWithOperands settings EntityDef{..} operands@(lhs, rhs) =
  where
   unHaskelled = unHaskellName entityHaskell
   typeName = conT $ mkName $ unpack unHaskelled
+  fieldMap = mkFieldMap entityFields
 
-  nameToRef = Map.fromList ((fieldHaskell &&& fieldReference) <$> entityFields)
-  expr = pure $ mkOrExpr mkSelector nameToRef operands entityUniques
+  expr = pure $ mkOrExpr mkSelector fieldMap operands entityUniques
 
   mkSelector = mkName . unpack . maybeUnderscore . maybePrefixed
   maybeUnderscore fieldName
@@ -52,6 +53,15 @@ mkUniquenessCheckWithOperands settings EntityDef{..} operands@(lhs, rhs) =
   maybePrefixed fieldName
    | mpsPrefixFields settings = lowerFirst unHaskelled <> upperFirst (unHaskellName fieldName)
    | otherwise = unHaskellName fieldName
+
+type FieldMap = Map HaskellName (ReferenceDef, IsNullable)
+
+mkFieldMap :: [FieldDef] -> FieldMap
+mkFieldMap =
+  Map.fromList . map mkPair
+ where
+  mkPair FieldDef{..} =
+    (fieldHaskell, (fieldReference, nullable fieldAttrs))
 
 lowerFirst :: Text -> Text
 lowerFirst t =
@@ -65,32 +75,58 @@ upperFirst t =
     Just (c, cs) -> cons (toUpper c) cs
     Nothing -> t
 
-mkOrExpr :: (HaskellName -> Name) -> Map HaskellName ReferenceDef -> (Name, Name) -> [UniqueDef] -> Exp
-mkOrExpr mkSelector nameToRef operands uniqueDefs =
+mkOrExpr :: (HaskellName -> Name) -> FieldMap -> (Name, Name) -> [UniqueDef] -> Exp
+mkOrExpr mkSelector fieldMap operands uniqueDefs =
   maybe false (foldl1 $ binApp orOp) (nonEmpty andExprs)
  where
   false = ConE $ mkName "False"
   orOp = VarE $ mkName "||"
-  andExprs = mapMaybe (mkAndExpr mkSelector nameToRef operands) uniqueDefs
+  andExprs = mapMaybe (mkAndExpr mkSelector fieldMap operands) uniqueDefs
 
-mkAndExpr :: (HaskellName -> Name) -> Map HaskellName ReferenceDef -> (Name, Name) -> UniqueDef -> Maybe Exp
-mkAndExpr mkSelector nameToRef operands UniqueDef{..} =
+mkAndExpr :: (HaskellName -> Name) -> FieldMap -> (Name, Name) -> UniqueDef -> Maybe Exp
+mkAndExpr mkSelector fieldMap operands UniqueDef{..} =
   foldl1 (binApp andOp) <$> nonEmpty comparisons
  where
   andOp = VarE $ mkName "&&"
   fields = map fst uniqueFields
-  nonForeignFields = filter (not . isForeignRef . (nameToRef Map.!)) fields
-  comparisons = map (mkComparison operands . mkSelector) nonForeignFields
+  nonForeignFields = mapMaybe (uncurry comparisonType . (id &&& (fieldMap Map.!))) fields
+  comparisons = map (mkComparison mkSelector operands) nonForeignFields
 
-mkComparison :: (Name, Name) -> Name -> Exp
-mkComparison (lhs, rhs) selector =
-  binApp eqOp (VarE selector `AppE` VarE lhs) (VarE selector `AppE` VarE rhs)
- where
-  eqOp = VarE $ mkName "=="
+data ComparisonType
+  = PlainEquality HaskellName
+  | OnlyNonNull HaskellName
+
+comparisonType :: HaskellName -> (ReferenceDef, IsNullable) -> Maybe ComparisonType
+comparisonType name pair =
+  case pair of
+    (ForeignRef{}, _) -> Nothing
+    (_, Nullable{}) -> pure (OnlyNonNull name)
+    (_, NotNullable) -> pure (PlainEquality name)
+
+mkComparison :: (HaskellName -> Name) -> (Name, Name) -> ComparisonType -> Exp
+mkComparison mkSelector operands (PlainEquality name) = mkEqComparison operands (mkSelector name)
+mkComparison mkSelector operands (OnlyNonNull name) = mkNonNullEqComparison operands (mkSelector name)
+
+mkEqComparison :: (Name, Name) -> Name -> Exp
+mkEqComparison (lhs, rhs) selector =
+  binApp
+    (VarE $ mkName "==")
+    (VarE selector `AppE` VarE lhs)
+    (VarE selector `AppE` VarE rhs)
+
+mkNonNullEqComparison :: (Name, Name) -> Name -> Exp
+mkNonNullEqComparison (lhs, rhs) selector =
+  VarE (mkName "maybe")
+    `AppE` ConE (mkName "False")
+    `AppE` VarE (mkName "id")
+    `AppE` ParensE
+      (binApp
+        (VarE $ mkName "<*>")
+        (binApp
+          (VarE $ mkName "<$>")
+          (VarE $ mkName "==")
+          (VarE selector `AppE` VarE lhs))
+        (VarE selector `AppE` VarE rhs))
 
 binApp :: Exp -> Exp -> Exp -> Exp
 binApp f x y = UInfixE x f y
-
-isForeignRef :: ReferenceDef -> Bool
-isForeignRef ForeignRef{} = True
-isForeignRef _ = False

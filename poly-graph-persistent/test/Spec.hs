@@ -122,10 +122,10 @@ share [mkUniquenessChecks sqlSettings { mpsGenerateLenses = True }, mkPersist sq
     name Text
     bar Bool
     baz Bool
-    whomp Bool
+    whomp Bool Maybe
     foo FooId
     UniqueFooBarBaz foo bar baz -- A nonsensical constraint that has an FK and two plain values
-    UniqueWhomp whomp -- A second constraint
+    UniqueWhomp whomp !force -- A second constraint with a nullable field
     deriving Show Eq Generic
 |]
 
