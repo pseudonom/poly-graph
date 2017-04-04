@@ -281,7 +281,7 @@ instance
   ) => EnsureUniqueness (f a) (f (Entity a)) as where
   ensureUniqueness fa graph = do
     fa' <- traverse (`ensureUniqueness` graph) fa
-    if isInternallyConsistent fa'
+    if doesNodeSatisfyUniqueness fa'
       then pure fa'
       else do
         fa'' <- traverse (const arbitrary) fa' -- This could be less drastic
@@ -289,7 +289,7 @@ instance
 
 -- | Check that a context-free value is internally consistent
 class DoesNodeSatisfyUniqueness a b | a -> b, b -> a where
-  isInternallyConsistent :: a -> Bool
+  doesNodeSatisfyUniqueness :: a -> Bool
 
 -- | Collections of entities should not have duplicates
 instance
@@ -297,7 +297,7 @@ instance
   , PersistEntity a
   , UniquenessCheck a
   ) => DoesNodeSatisfyUniqueness (f a) (f (Entity a)) where
-  isInternallyConsistent fa =
+  doesNodeSatisfyUniqueness fa =
     length (List.nubBy couldCauseUniquenessViolation items) == length items
    where
     items = toList fa

@@ -21,9 +21,73 @@ import Database.Persist.Quasi (nullable)
 import Database.Persist.TH
 import Language.Haskell.TH
 
+-- | 'couldCauseUniquenessViolation' returns 'True' if its arguments violate
+-- at least one uniqueness constraint on that type, ignoring foreign keys.
 class UniquenessCheck a where
   couldCauseUniquenessViolation :: a -> a -> Bool
 
+-- | Use 'mkUniquenessChecks' in 'Database.Persist.TH.share' with the same
+-- settings passed to 'Database.Persist.TH.mkPersist' to generate instances
+-- for 'UniquenessCheck'. For example:
+--
+-- > share
+-- >   [ mkUniquenessChecks sqlSettings
+-- >   , mkPersist sqlSettings
+-- >   , mkMigrate "migrate"
+-- >   ]
+-- >   [persistLowerCase|
+-- >     Author
+-- >       name Text
+-- >       pseudonym Text Maybe
+-- >       UniqueAuthorName name
+-- >       UniqueAuthoPseudonym pseudonym !force
+-- >       deriving Show Eq Generic
+-- >     Book
+-- >       title Text
+-- >       authorId AuthorId
+-- >       publicationDate Date
+-- >       isbn ISBN
+-- >       UniquePublicationInfo authorId title publicationDate
+-- >       UniqueISBN isbn
+-- >       deriving Show Eq Generic
+-- >   |]
+--
+-- This will generate the following 'UniquenessCheck' instances:
+--
+-- > class UniquenessCheck Author where
+-- >   couldCauseUniquenessViolation lhs rhs =
+-- >     authorName lhs == authorName rhs == ||
+-- >     maybe False ((==) <$> pseudonym lhs <*> pseudonym rhs)
+-- >
+-- > class UniquenessCheck Book where
+-- >   couldCauseUniquenessViolation lhs rhs =
+-- >     bookTitle lhs == bookTitle rhs &&
+-- >     bookPublicationDate lhs == bookPublicationDate rhs ||
+-- >     bookIsbn lhs == bookIsbn rhs
+--
+-- The format of each function body is roughly:
+--
+-- > {-
+-- >   orExpr = andExpr [|| orExpr]
+-- >
+-- >   andExpr = comparison [&& andExpr]
+-- >
+-- >   comparison
+-- >     = nonNullComparison
+-- >     | nullableComparison
+-- >
+-- >   nonNullComparison = selector lhs == selector rhs
+-- >
+-- >   nullableComparison = maybe False ((==) <$> selector lhs <*> selector rhs)
+-- > -}
+--
+-- Note the difference in how non-null fields are compared versus how nullable
+-- fields are compared. In Haskell, 'Nothing' is equal to 'Nothing', but in SQL,
+-- NULL is not equal to NULL.
+--
+-- Additionally the foreign keys aren't compared since they haven't been updated
+-- to actually point to other entities yet, so we can't rely on them contributing
+-- to uniqueness.
 mkUniquenessChecks :: MkPersistSettings -> [EntityDef] -> Q [Dec]
 mkUniquenessChecks settings = fmap concat . traverse (mkUniquenessCheck settings)
 
