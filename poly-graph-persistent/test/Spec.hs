@@ -10,6 +10,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -45,6 +46,7 @@ import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances ()
 import Data.Graph.HGraph.Persistent
 import Data.Graph.HGraph.Persistent.Instances ()
+import Data.Graph.HGraph.Persistent.TH
 import Data.Graph.HGraph.TH
 
 connString :: ConnectionString
@@ -74,8 +76,7 @@ instance Arbitrary Text where
   arbitrary = pack . filter (not . isBadChar) <$> arbitrary
     where isBadChar x = x == '\NUL' || x == '\\' -- Make postgres vomit
 
-
-share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistLowerCase|
+share [mkUniquenessChecks sqlSettings { mpsGenerateLenses = True }, mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigrate"] [persistLowerCase|
   SelfRef
     name Text
     selfRefId SelfRefId Maybe
@@ -104,9 +105,30 @@ share [mkPersist sqlSettings { mpsGenerateLenses = True },  mkMigrate "testMigra
     studentId StudentId Maybe
     teacherId TeacherId Maybe
     bar Bool
-    BarUnique bar -- This is a nonsensical constraint just to test uniqueness violations
+    UniqueBar bar -- This is a nonsensical constraint just to test uniqueness violations
+    deriving Show Eq Generic
+  Baz
+    name Text
+    foo FooId
+    UniqueFoo foo -- Another nonsensical constraint but one that only has a FK
+    deriving Show Eq Generic
+  Quux
+    name Text
+    bar Bool
+    foo FooId
+    UniqueFooBar foo bar -- A nonsensical constraint that has an FK and plain value
+    deriving Show Eq Generic
+  Merp
+    name Text
+    bar Bool
+    baz Bool
+    whomp Bool Maybe
+    foo FooId
+    UniqueFooBarBaz foo bar baz -- A nonsensical constraint that has an FK and two plain values
+    UniqueWhomp whomp !force -- A second constraint with a nullable field
     deriving Show Eq Generic
 |]
+
 instance Arbitrary State where
   arbitrary = pure $ State "grault"
 instance Arbitrary District where
@@ -121,6 +143,12 @@ instance Arbitrary SelfRef where
   arbitrary = SelfRef "self" <$> arbitrary
 instance Arbitrary Foo where
   arbitrary = Foo "foo" <$> arbitrary <*> arbitrary <*> arbitrary
+instance Arbitrary Baz where
+  arbitrary = Baz "baz" <$> arbitrary
+instance Arbitrary Quux where
+  arbitrary = Quux "quux" <$> arbitrary <*> arbitrary
+instance Arbitrary Merp where
+  arbitrary = Merp "merp" <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
 instance (KnownNat n, Arbitrary a) => Arbitrary (Sized.Vector n a) where
   arbitrary =
     fromMaybe (error "`vector` should return list of requested length") . Sized.fromList <$>
@@ -136,6 +164,9 @@ instance District `PointsAt` Entity State
 instance District `PointsAt` Maybe (Entity State)
 instance Foo `PointsAt` Entity Student
 instance Foo `PointsAt` Entity Teacher
+instance Baz `PointsAt` Entity Foo
+instance Quux `PointsAt` Entity Foo
+instance Merp `PointsAt` Entity Foo
 
 _entityKey :: Lens' (Entity a) (Key a)
 _entityKey pure' (Entity i e) = (\i' -> Entity i' e) <$> pure' i
@@ -227,6 +258,162 @@ main = do
                  HGraph
                    '[ '("Foo1", '[], Entity Foo)
                     , '("Foo2", '[], Entity Foo)
+                    ]
+                 )
+        pure ()
+      it "works with unique constraints without using unique" $ db $ do
+        graph <-
+          liftIO (generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Foo)
+                    , '("Foo2", '[], Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Entity Foo)
+                    , '("Foo2", '[], Entity Foo)
+                    ]
+                 )
+        pure ()
+      it "works with unique constraints and unique if the latter is used carefully" $ db $ do
+        graph <-
+          liftIO (generate (unique fooName =<< ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Foo)
+                    , '("Foo2", '[], Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Entity Foo)
+                    , '("Foo2", '[], Entity Foo)
+                    ]
+                 )
+        pure ()
+      it "ensures internal uniqueness in a single node" $ db $ do
+        graph <-
+          liftIO (generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Foo", '[], Sized.Vector 2 Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Foo", '[], Sized.Vector 2 (Entity Foo))
+                    ]
+                 )
+        pure ()
+      it "user can edit graph after it's been uniqued" $ db $ do
+        graph <-
+          liftIO (generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            <&> pluck (Proxy :: Proxy "Foo1") . fooName .~ "foo1"
+            <&> pluck (Proxy :: Proxy "Foo2") . fooName .~ "foo2"
+              :: M (
+                   HGraph
+                     '[ '("Foo1", '[], Foo)
+                      , '("Foo2", '[], Foo)
+                      ]
+                   )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Foo1", '[], Entity Foo)
+                    , '("Foo2", '[], Entity Foo)
+                    ]
+                 )
+        liftIO $ do
+          graph' ^. pluck (Proxy :: Proxy "Foo1") . _entityVal . fooName `shouldBe` "foo1"
+          graph' ^. pluck (Proxy :: Proxy "Foo2") . _entityVal . fooName `shouldBe` "foo2"
+      it "user can un-unique graph after it's been uniqued" $ db $ do
+        graph <-
+          liftIO (generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            <&> pluck (Proxy :: Proxy "Foo1") . fooBar .~ False
+            <&> pluck (Proxy :: Proxy "Foo2") . fooBar .~ False
+              :: M (
+                   HGraph
+                     '[ '("Foo1", '[], Foo)
+                      , '("Foo2", '[], Foo)
+                      ]
+                   )
+        let
+          insertUniquenessViolation =
+            insertGraph graph
+              :: M (
+                   HGraph
+                     '[ '("Foo1", '[], Entity Foo)
+                      , '("Foo2", '[], Entity Foo)
+                      ]
+                   )
+        liftIO $ runConn insertUniquenessViolation `shouldThrow` anyException
+      it "ignores unique constraints consisting solely of FKs" $ db $ do
+        graph <-
+          liftIO (generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Baz1", '["Foo"], Baz)
+                    , '("Baz2", '["Foo"], Baz)
+                    , '("Foo", '[], Foo)
+                    ]
+                 )
+        let
+          insertUniquenessViolation =
+            insertGraph graph
+              :: M (
+                   HGraph
+                     '[ '("Baz1", '["Foo"], Entity Baz)
+                      , '("Baz2", '["Foo"], Entity Baz)
+                      , '("Foo", '[], Entity Foo)
+                      ]
+                   )
+        liftIO $ runConn insertUniquenessViolation `shouldThrow` anyException
+      it "ignores the FK component of a unique constraint" $ db $ do
+        graph <-
+          liftIO (generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Quux1", '["Foo"], Quux)
+                    , '("Quux2", '["Foo"], Quux)
+                    , '("Foo", '[], Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Quux1", '["Foo"], Entity Quux)
+                    , '("Quux2", '["Foo"], Entity Quux)
+                    , '("Foo", '[], Entity Foo)
+                    ]
+                 )
+        pure ()
+      it "ignores the FK component of a unique constraint with multiple plain components" $ db $ do
+        graph <-
+          liftIO (generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
+            :: M (
+                 HGraph
+                   '[ '("Merp1", '["Foo"], Merp)
+                    , '("Merp2", '["Foo"], Merp)
+                    , '("Foo", '[], Foo)
+                    ]
+                 )
+        graph' <-
+          insertGraph graph
+            :: M (
+                 HGraph
+                   '[ '("Merp1", '["Foo"], Entity Merp)
+                    , '("Merp2", '["Foo"], Entity Merp)
+                    , '("Foo", '[], Entity Foo)
                     ]
                  )
         pure ()

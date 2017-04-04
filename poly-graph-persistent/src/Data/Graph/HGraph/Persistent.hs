@@ -13,13 +13,14 @@
 {-# LANGUAGE UndecidableInstances #-}
 -- Pattern synonyms and exhaustivity checking don't work well together
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Graph.HGraph.Persistent where
 
 import Control.Lens (partsOf, (^..), (%%~))
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Foldable (traverse_)
+import Data.Foldable (traverse_, toList)
 import qualified Data.List as List
 import Data.Proxy
 import Database.Persist
@@ -32,6 +33,7 @@ import Test.QuickCheck.Gen (generate, Gen)
 import Data.Graph.HGraph
 import Data.Graph.HGraph.Instances
 import Data.Graph.HGraph.Internal
+import Data.Graph.HGraph.Persistent.TH (UniquenessCheck(..))
 
 instance
   Key a `FieldPointsAt` Entity a where
@@ -129,7 +131,7 @@ class
     (MonadIO m, UnwrapAll b ~ a) =>
     Proxy ps -> HGraph a -> ReaderT backend m (HGraph b)
 
--- -- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
+-- | HGraph base case (can't be the empty list because then we won't know which type of @backend@ to use)
 instance
   ( InsertElement a b backend baseBackend, HasEot a, GNullify a ps (Eot a)
   , PointsAtR i is a '[]
@@ -137,9 +139,10 @@ instance
   , PersistStoreWrite backend
   ) =>
   InsertGraph ps '[ '(i, is, a)] '[ '(i, is, b)] backend baseBackend where
-  insertGraph' Proxy (a `Cons` Nil) = do
-    e <- insertElement . unNode  $ a `pointsAtR` Nil
-    pure $ Node e `Cons` Nil
+  insertGraph' Proxy (rawNode `Cons` Nil) = do
+    let Node updated = rawNode `pointsAtR` Nil
+    inserted <- insertElement updated
+    pure $ Node inserted `Cons` Nil
 
 -- | HGraph recursive case
 instance
@@ -149,12 +152,11 @@ instance
   , InsertElement a d backend baseBackend
   ) =>
   InsertGraph ps ('(i, is, a) ': b ': c) ('(i, is, d) ': e ': f) backend baseBackend where
-  insertGraph' Proxy (a `Cons` b) = do
-    b' <- insertGraph' (Proxy :: Proxy ps) b
-    let Node a' = a `pointsAtR` b'
-    a'' <- insertElement a'
-    pure $ Node a'' `Cons` b'
-
+  insertGraph' Proxy (rawNode `Cons` rawGraph) = do
+    graph <- insertGraph' (Proxy :: Proxy ps) rawGraph
+    let Node updated = rawNode `pointsAtR` graph
+    inserted <- insertElement updated
+    pure $ Node inserted `Cons` graph
 
 class
   InsertElement (a :: *) (b :: *) (backend :: *) (baseBackend :: *) | a -> b, b -> a, a -> baseBackend, b -> baseBackend where
@@ -173,10 +175,37 @@ instance
     pure $ Entity <$> fid <*> fa
 
 insertGraphFromFragments
-  :: (MonadIO m, Arbitrary (RawGraph z), z ~ UnwrapAll y, InsertGraph '[] z y backend baseBackend, PersistStoreWrite backend, BaseBackend backend ~ baseBackend)
-  => Proxy y -> (HGraph z -> HGraph z) -> ReaderT backend m (HGraph z, HGraph y)
+  ::
+    ( MonadIO m
+    , Arbitrary (RawGraph z)
+    , z ~ UnwrapAll y
+    , InsertGraph '[] z y backend baseBackend
+    , PersistStoreWrite backend
+    , BaseBackend backend ~ baseBackend
+    )
+  => Proxy y
+  -> (HGraph z -> HGraph z)
+  -> ReaderT backend m (HGraph z, HGraph y)
 insertGraphFromFragments Proxy f = do
   graph <- liftIO (f . unRawGraph <$> generate arbitrary)
+  (graph,) <$> insertGraph graph
+
+insertUniqueGraphFromFragments
+  ::
+    ( MonadIO m
+    , Arbitrary (RawGraph z)
+    , z ~ UnwrapAll y
+    , WrapAll z ~ y
+    , EnsureGraphUniqueness '[] z y
+    , InsertGraph '[] z y backend baseBackend
+    , PersistStoreWrite backend
+    , BaseBackend backend ~ baseBackend
+    )
+  => Proxy y
+  -> (HGraph z -> HGraph z)
+  -> ReaderT backend m (HGraph z, HGraph y)
+insertUniqueGraphFromFragments Proxy f = do
+  graph <- liftIO (f <$> generate (ensureGraphUniqueness =<< fmap unRawGraph arbitrary))
   (graph,) <$> insertGraph graph
 
 -- Handy helper function for ensuring that a graph is unique in some attribute (e.g. email address)
@@ -190,3 +219,85 @@ unique field graph = do
   else pure graph
   where
     anySame xs = length (List.nub xs) /= length xs
+
+type family Wrap (a :: *) :: * where
+  Wrap (f a) = f (Entity a)
+  Wrap a = Entity a
+
+type family WrapAll (as :: [(k, [k], *)]) :: [(k, [k], *)] where
+  WrapAll ('(i, is, a) ': as) = '(i, is, Wrap a) ': WrapAll as
+  WrapAll '[] = '[]
+
+ensureGraphUniqueness
+  :: (EnsureGraphUniqueness '[] a (WrapAll a))
+  => HGraph a
+  -> Gen (HGraph a)
+ensureGraphUniqueness = ensureGraphUniqueness' (Proxy :: Proxy ('[] :: [*]))
+
+class
+  EnsureGraphUniqueness (ps :: [*]) (a :: [(k, [k], *)]) (b :: [(k, [k], *)]) | a -> b, b -> a where
+  ensureGraphUniqueness' :: (WrapAll a ~ b) => Proxy ps -> HGraph a -> Gen (HGraph a)
+
+instance EnsureGraphUniqueness ps '[] '[] where
+  ensureGraphUniqueness' Proxy Nil = pure Nil
+
+instance
+  ( (i `Member` as) ~ 'UniqueName
+  , EnsureGraphUniqueness ps as bs
+  , EnsureUniqueness a b as
+  ) =>
+  EnsureGraphUniqueness ps ('(i, is, a) ': as) ('(i, is, b) ': bs) where
+  ensureGraphUniqueness' Proxy (Node item `Cons` graph) = do
+    uniquedGraph <- ensureGraphUniqueness' (Proxy :: Proxy ps) graph
+    uniqueItem <- ensureUniqueness item uniquedGraph
+    pure $ Node uniqueItem `Cons` uniquedGraph
+
+-- | Update a to be unique in HGraph as
+class EnsureUniqueness a b as | a -> b, b -> a where
+  ensureUniqueness :: (Wrap a ~ b) => a -> HGraph as -> Gen a
+
+-- | Check uniqueness for a by its Uniques modulo FKs
+instance
+  ( PersistEntity a
+  , GetAllOfType as a
+  , Arbitrary a
+  , UniquenessCheck a
+  ) => EnsureUniqueness a (Entity a) as where
+  ensureUniqueness a0 graph =
+    loop (getAllOfType graph) a0
+   where
+    loop others a
+      | any (couldCauseUniquenessViolation a) others = arbitrary >>= loop others
+      | otherwise = pure a
+
+-- | Check uniqueness by looking inside Functor-shaped values and ensuring
+-- that the values in the Functor itself are unique together
+instance
+  ( Wrap a ~ Entity a
+  , Traversable f
+  , EnsureUniqueness a (Entity a) as
+  , DoesNodeSatisfyUniqueness (f a) (f (Entity a))
+  , Arbitrary a
+  ) => EnsureUniqueness (f a) (f (Entity a)) as where
+  ensureUniqueness fa graph = do
+    fa' <- traverse (`ensureUniqueness` graph) fa
+    if doesNodeSatisfyUniqueness fa'
+      then pure fa'
+      else do
+        fa'' <- traverse (const arbitrary) fa' -- This could be less drastic
+        ensureUniqueness fa'' graph
+
+-- | Check that a context-free value is internally consistent
+class DoesNodeSatisfyUniqueness a b | a -> b, b -> a where
+  doesNodeSatisfyUniqueness :: a -> Bool
+
+-- | Collections of entities should not have duplicates
+instance
+  ( Foldable f
+  , PersistEntity a
+  , UniquenessCheck a
+  ) => DoesNodeSatisfyUniqueness (f a) (f (Entity a)) where
+  doesNodeSatisfyUniqueness fa =
+    length (List.nubBy couldCauseUniquenessViolation items) == length items
+   where
+    items = toList fa
