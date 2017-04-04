@@ -276,7 +276,7 @@ instance
   ( Wrap a ~ Entity a
   , Traversable f
   , EnsureUniqueness a (Entity a) as
-  , IsInternallyConsistent (f a) (f (Entity a))
+  , DoesNodeSatisfyUniqueness (f a) (f (Entity a))
   , Arbitrary a
   ) => EnsureUniqueness (f a) (f (Entity a)) as where
   ensureUniqueness fa graph = do
@@ -288,7 +288,7 @@ instance
         ensureUniqueness fa'' graph
 
 -- | Check that a context-free value is internally consistent
-class IsInternallyConsistent a b | a -> b, b -> a where
+class DoesNodeSatisfyUniqueness a b | a -> b, b -> a where
   isInternallyConsistent :: a -> Bool
 
 -- | Collections of entities should not have duplicates
@@ -296,7 +296,7 @@ instance
   ( Foldable f
   , PersistEntity a
   , UniquenessCheck a
-  ) => IsInternallyConsistent (f a) (f (Entity a)) where
+  ) => DoesNodeSatisfyUniqueness (f a) (f (Entity a)) where
   isInternallyConsistent fa =
     length (List.nubBy couldCauseUniquenessViolation items) == length items
    where
